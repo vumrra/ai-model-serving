@@ -1,0 +1,26 @@
+groups:
+  - name: qwen-serving
+    rules:
+      - alert: QwenHighErrorRate
+        expr: (sum(rate(qwen_http_requests_total{status=~"5.."}[5m])) + sum(rate(qwen_stream_errors_total[5m]))) / sum(rate(qwen_http_requests_total[5m])) > 0.02
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Qwen API 5xx 비율이 2%를 넘었습니다."
+
+      - alert: QwenHighTTFT
+        expr: histogram_quantile(0.95, sum by (le) (rate(qwen_ttft_seconds_bucket[5m]))) > 3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Qwen API p95 TTFT가 3초를 넘었습니다."
+
+      - alert: QwenEngineNotReady
+        expr: qwen_engine_ready == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Qwen engine readiness가 2분 동안 실패했습니다."

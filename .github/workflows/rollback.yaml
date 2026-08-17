@@ -1,0 +1,92 @@
+name: rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      previous_build_run_id:
+        description: "Previously approved build-images workflow run ID"
+        required: true
+      ttl_minutes:
+        default: "240"
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+
+concurrency:
+  group: qwen-demo
+  cancel-in-progress: false
+
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    environment: demo
+    timeout-minutes: 60
+    env:
+      RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+      RUNPOD_REGISTRY_AUTH_ID: ${{ secrets.RUNPOD_REGISTRY_AUTH_ID }}
+      ENGINE_API_KEY: ${{ secrets.ENGINE_API_KEY }}
+      PUBLIC_API_KEY: ${{ secrets.PUBLIC_API_KEY }}
+      GATEWAY_SERVICE_ACCOUNT: ${{ vars.GATEWAY_SERVICE_ACCOUNT }}
+      PROMOTED: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v3
+      - run: uv sync --dev
+      - name: Download and verify previous release manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run download '${{ inputs.previous_build_run_id }}' --pattern 'release-manifest-*' --dir release-download
+          RELEASE_FILE="$(find release-download -name '*.json' -type f | head -1)"
+          echo "RELEASE_FILE=$RELEASE_FILE" >> "$GITHUB_ENV"
+          uv run python -m scripts.export_release_env "$RELEASE_FILE"
+      - name: Recreate previous engine
+        run: >-
+          uv run python deploy/runpod/create_pod.py
+          --image "$RUNTIME_IMAGE"
+          --release-id "$RELEASE_ID"
+          --purpose rollback
+          --ttl-minutes '${{ inputs.ttl_minutes }}'
+          --output pod.json
+      - run: uv run python deploy/runpod/wait_ready.py --pod-file pod.json --api-key "$ENGINE_API_KEY"
+      - name: Deploy previous immutable release
+        run: |
+          ENGINE_URL="$(python -c 'import json; print(json.load(open("pod.json"))["proxyUrl"])')"
+          uv run python deploy/cloudrun/deploy_gateway.py \
+            --service qwen-gateway-demo \
+            --service-account "$GATEWAY_SERVICE_ACCOUNT" \
+            --image "$GATEWAY_IMAGE" \
+            --engine-url "$ENGINE_URL" \
+            --release-id "$RELEASE_ID" \
+            --engine-model-name "$MODEL_ID" \
+            --engine-name "$ENGINE_NAME" \
+            --model-revision "$MODEL_REVISION" \
+            --runtime-image "$RUNTIME_IMAGE" \
+            --serving-config-sha256 "$SERVING_CONFIG_SHA256" \
+            --tag rollback-candidate \
+            --no-traffic
+      - name: Verify restored API
+        run: |
+          CANDIDATE_URL="$(gcloud run services describe qwen-gateway-demo --region asia-northeast3 --format='value(status.traffic[?tag=rollback-candidate].url)')"
+          uv run python scripts/smoke_public_api.py --base-url "$CANDIDATE_URL" \
+            --expected-release-id "$RELEASE_ID" \
+            --expected-model-revision "$MODEL_REVISION" \
+            --expected-runtime-image "$RUNTIME_IMAGE" \
+            --expected-serving-config-sha256 "$SERVING_CONFIG_SHA256"
+      - name: Switch traffic to restored release
+        run: |
+          gcloud run services update-traffic qwen-gateway-demo \
+            --region asia-northeast3 \
+            --to-tags rollback-candidate=100
+          echo "PROMOTED=true" >> "$GITHUB_ENV"
+      - name: Delete failed rollback engine
+        if: failure() && env.PROMOTED != 'true'
+        run: test ! -f pod.json || uv run python deploy/runpod/delete_pod.py --pod-file pod.json

@@ -1,0 +1,36 @@
+services:
+  mock-engine:
+    build:
+      context: ../..
+      dockerfile: images/gateway.Dockerfile
+    command: uvicorn apps.mock_engine.main:app --host 0.0.0.0 --port 8001
+    environment:
+      ENGINE_API_KEY: ${ENGINE_API_KEY:-local-engine-key}
+    ports:
+      - "8001:8001"
+
+  gateway:
+    build:
+      context: ../..
+      dockerfile: images/gateway.Dockerfile
+    depends_on:
+      - mock-engine
+    environment:
+      PUBLIC_API_KEY: ${PUBLIC_API_KEY:-local-public-key}
+      ENGINE_API_KEY: ${ENGINE_API_KEY:-local-engine-key}
+      ENGINE_BASE_URL: http://mock-engine:8001
+      ENGINE_MODEL_NAME: mock-qwen
+      MODEL_ALIAS: qwen3-4b
+      RELEASE_ID: local-compose
+    ports:
+      - "8000:8080"
+
+  prometheus:
+    image: prom/prometheus:v3.13.1@sha256:3c42b892cf723fa54d2f262c37a0e1f80aa8c8ddb1da7b9b0df9455a35a7f893
+    depends_on:
+      - gateway
+    volumes:
+      - ../../ops/prometheus/prometheus.yaml:/etc/prometheus/prometheus.yml:ro
+      - ../../ops/prometheus/alerts.yaml:/etc/prometheus/alerts.yaml:ro
+    ports:
+      - "9090:9090"

@@ -1,0 +1,12 @@
+{
+  "cloudType": "SECURE",
+  "computeType": "GPU",
+  "gpuTypeIds": ["NVIDIA L40S"],
+  "gpuCount": 1,
+  "containerRegistryAuthId": "RUNPOD_REGISTRY_AUTH_ID",
+  "containerDiskInGb": 50,
+  "volumeInGb": 30,
+  "volumeMountPath": "/workspace",
+  "ports": ["8000/http"],
+  "interruptible": false
+}

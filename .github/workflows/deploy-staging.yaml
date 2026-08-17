@@ -1,0 +1,89 @@
+name: deploy-staging
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_run_id:
+        description: "Successful build-images workflow run ID"
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+
+concurrency:
+  group: qwen-staging
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: gpu-staging
+    timeout-minutes: 60
+    env:
+      RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+      RUNPOD_REGISTRY_AUTH_ID: ${{ secrets.RUNPOD_REGISTRY_AUTH_ID }}
+      ENGINE_API_KEY: ${{ secrets.ENGINE_API_KEY }}
+      PUBLIC_API_KEY: ${{ secrets.PUBLIC_API_KEY }}
+      GATEWAY_SERVICE_ACCOUNT: ${{ vars.GATEWAY_SERVICE_ACCOUNT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v3
+      - run: uv sync --dev
+      - name: Download and verify release manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run download '${{ inputs.build_run_id }}' --pattern 'release-manifest-*' --dir release-download
+          RELEASE_FILE="$(find release-download -name '*.json' -type f | head -1)"
+          echo "RELEASE_FILE=$RELEASE_FILE" >> "$GITHUB_ENV"
+          uv run python -m scripts.export_release_env "$RELEASE_FILE"
+      - name: Create engine
+        run: >-
+          uv run python deploy/runpod/create_pod.py
+          --image "$RUNTIME_IMAGE"
+          --release-id "$RELEASE_ID"
+          --purpose staging
+          --ttl-minutes 45
+          --output pod.json
+      - name: Wait for model
+        run: uv run python deploy/runpod/wait_ready.py --pod-file pod.json --api-key "$ENGINE_API_KEY"
+      - name: Deploy staging Gateway without production traffic
+        run: >-
+          uv run python deploy/cloudrun/deploy_gateway.py
+          --service qwen-gateway-staging
+          --service-account "$GATEWAY_SERVICE_ACCOUNT"
+          --image "$GATEWAY_IMAGE"
+          --engine-url "$(python -c 'import json; print(json.load(open("pod.json"))["proxyUrl"])')"
+          --release-id "$RELEASE_ID"
+          --engine-model-name "$MODEL_ID"
+          --engine-name "$ENGINE_NAME"
+          --model-revision "$MODEL_REVISION"
+          --runtime-image "$RUNTIME_IMAGE"
+          --serving-config-sha256 "$SERVING_CONFIG_SHA256"
+      - name: Contract smoke
+        run: |
+          uv run pytest tests/contract
+          SERVICE_URL="$(gcloud run services describe qwen-gateway-staging --region asia-northeast3 --format='value(status.url)')"
+          uv run python scripts/smoke_public_api.py --base-url "$SERVICE_URL" \
+            --expected-release-id "$RELEASE_ID" \
+            --expected-model-revision "$MODEL_REVISION" \
+            --expected-runtime-image "$RUNTIME_IMAGE" \
+            --expected-serving-config-sha256 "$SERVING_CONFIG_SHA256"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: staging-release
+          path: |
+            pod.json
+            release-download
+          retention-days: 1
+      - name: Cleanup failed staging
+        if: failure()
+        run: uv run python deploy/runpod/delete_pod.py --pod-file pod.json

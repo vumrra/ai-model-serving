@@ -1,0 +1,23 @@
+schema_version: 1
+engine: sglang
+build:
+  context: .
+  dockerfile: engines/sglang/Dockerfile
+  required_build_args:
+    BASE_IMAGE:
+      format: "lmsysorg/sglang:<version>@sha256:<64-hex-digest>"
+      enforced_by_dockerfile: true
+runtime:
+  port: 8000
+  shm_size: 32g
+  required_environment:
+    MODEL_REVISION: "1cfa9a7208912126459214e8b04321603b3df60c"
+    ENGINE_API_KEY: secret
+  environment:
+    MODEL_ID: Qwen/Qwen3-4B
+    SERVED_MODEL_NAME: Qwen/Qwen3-4B
+    DTYPE: bfloat16
+    MAX_MODEL_LEN: "8192"
+    TENSOR_PARALLEL_SIZE: "1"
+    GPU_MEMORY_UTILIZATION: "0.90"
+    SGLANG_EXTRA_ARGS: ""

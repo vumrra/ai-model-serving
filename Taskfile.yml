@@ -1,0 +1,38 @@
+version: "3"
+
+tasks:
+  install:
+    desc: 개발 의존성을 설치합니다.
+    cmds:
+      - uv sync --dev
+
+  dev:
+    desc: Gateway와 Mock Engine을 함께 실행합니다.
+    cmds:
+      - uv run python scripts/run_local.py
+
+  test:
+    desc: 전체 자동 테스트를 실행합니다.
+    cmds:
+      - uv run pytest
+
+  lint:
+    desc: 코드 스타일과 기본 오류를 검사합니다.
+    cmds:
+      - uv run ruff check .
+      - uv run ruff format --check .
+
+  format:
+    desc: Python 코드를 자동 정리합니다.
+    cmds:
+      - uv run ruff check --fix .
+      - uv run ruff format .
+
+  typecheck:
+    desc: 타입 힌트를 검사합니다.
+    cmds:
+      - uv run pyright
+
+  verify:
+    desc: 제출 전에 실행할 전체 검증입니다.
+    deps: [lint, typecheck, test]

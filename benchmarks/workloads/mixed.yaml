@@ -1,0 +1,44 @@
+schema_version: 1
+name: qwen-mixed-length
+defaults:
+  model: Qwen/Qwen3-4B
+  stream: true
+  temperature: 0.0
+  top_p: 1.0
+  max_tokens: 64
+  chat_template_kwargs:
+    enable_thinking: false
+execution:
+  warmup_requests: 2
+  rounds: 3
+  concurrency: 4
+  timeout_seconds: 90
+prompts:
+  - id: short-ko
+    messages:
+      - role: system
+        content: 핵심만 간결하게 답하세요.
+      - role: user
+        content: 연속 배칭이 LLM 서빙 처리량을 높이는 이유를 한 문장으로 설명해줘.
+  - id: short-en
+    messages:
+      - role: system
+        content: Answer in one concise paragraph.
+      - role: user
+        content: Explain the difference between latency and throughput in model serving.
+  - id: structured
+    parameters:
+      max_tokens: 96
+    messages:
+      - role: system
+        content: Return valid JSON only.
+      - role: user
+        content: Give three practical metrics for an LLM API as a JSON array of objects with name and purpose fields.
+  - id: long-prefix
+    parameters:
+      max_tokens: 128
+    messages:
+      - role: system
+        content: You review inference systems. Distinguish prefill from decode, mention KV cache pressure, and avoid unsupported performance claims.
+      - role: user
+        content: Propose a short checklist for comparing two OpenAI-compatible Qwen serving engines under the same GPU, model revision, tokenizer, context limit, and request workload.

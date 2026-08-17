@@ -1,0 +1,118 @@
+name: promote-demo
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_run_id:
+        description: "Successful build-images workflow run ID"
+        required: true
+      ttl_minutes:
+        default: "240"
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+
+concurrency:
+  group: qwen-demo
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    environment: demo
+    timeout-minutes: 60
+    env:
+      RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+      RUNPOD_REGISTRY_AUTH_ID: ${{ secrets.RUNPOD_REGISTRY_AUTH_ID }}
+      ENGINE_API_KEY: ${{ secrets.ENGINE_API_KEY }}
+      PUBLIC_API_KEY: ${{ secrets.PUBLIC_API_KEY }}
+      GATEWAY_SERVICE_ACCOUNT: ${{ vars.GATEWAY_SERVICE_ACCOUNT }}
+      CLOUD_RUN_SERVICE: qwen-gateway-demo
+      CLOUD_RUN_REGION: asia-northeast3
+      PROMOTED: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v3
+      - run: uv sync --dev
+      - name: Download and verify release manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run download '${{ inputs.build_run_id }}' --pattern 'release-manifest-*' --dir release-download
+          RELEASE_FILE="$(find release-download -name '*.json' -type f | head -1)"
+          echo "RELEASE_FILE=$RELEASE_FILE" >> "$GITHUB_ENV"
+          uv run python -m scripts.export_release_env "$RELEASE_FILE"
+      - name: Create candidate engine
+        run: >-
+          uv run python deploy/runpod/create_pod.py
+          --image "$RUNTIME_IMAGE"
+          --release-id "$RELEASE_ID"
+          --purpose demo
+          --ttl-minutes '${{ inputs.ttl_minutes }}'
+          --output pod.json
+      - name: Wait for candidate engine
+        run: uv run python deploy/runpod/wait_ready.py --pod-file pod.json --api-key "$ENGINE_API_KEY"
+      - name: Deploy tagged candidate without traffic
+        run: |
+          ENGINE_URL="$(python -c 'import json; print(json.load(open("pod.json"))["proxyUrl"])')"
+          uv run python deploy/cloudrun/deploy_gateway.py \
+            --service "$CLOUD_RUN_SERVICE" \
+            --service-account "$GATEWAY_SERVICE_ACCOUNT" \
+            --region "$CLOUD_RUN_REGION" \
+            --image "$GATEWAY_IMAGE" \
+            --engine-url "$ENGINE_URL" \
+            --release-id "$RELEASE_ID" \
+            --engine-model-name "$MODEL_ID" \
+            --engine-name "$ENGINE_NAME" \
+            --model-revision "$MODEL_REVISION" \
+            --runtime-image "$RUNTIME_IMAGE" \
+            --serving-config-sha256 "$SERVING_CONFIG_SHA256" \
+            --tag candidate \
+            --no-traffic
+      - name: Smoke candidate revision
+        run: |
+          CANDIDATE_URL="$(gcloud run services describe "$CLOUD_RUN_SERVICE" --region "$CLOUD_RUN_REGION" --format='value(status.traffic[?tag=candidate].url)')"
+          uv run python scripts/smoke_public_api.py --base-url "$CANDIDATE_URL" \
+            --expected-release-id "$RELEASE_ID" \
+            --expected-model-revision "$MODEL_REVISION" \
+            --expected-runtime-image "$RUNTIME_IMAGE" \
+            --expected-serving-config-sha256 "$SERVING_CONFIG_SHA256"
+          uv run python -m evals.runner --base-url "$CANDIDATE_URL" --model qwen3-4b
+          uv run python -m benchmarks.runner \
+            --endpoint "$CANDIDATE_URL/v1/chat/completions" \
+            --workload benchmarks/workloads/gateway.yaml \
+            --engine "$ENGINE_NAME" \
+            --model qwen3-4b \
+            --model-revision "$MODEL_REVISION" \
+            --api-key-env PUBLIC_API_KEY \
+            --output benchmarks/raw/promotion.json
+          uv run python scripts/check_benchmark_gate.py benchmarks/raw/promotion.json \
+            --max-ttft-ms '${{ vars.PROMOTION_MAX_TTFT_MS || '5000' }}' \
+            --max-e2e-ms '${{ vars.PROMOTION_MAX_E2E_MS || '30000' }}'
+      - name: Save deployment evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: demo-release-${{ inputs.build_run_id }}
+          path: |
+            pod.json
+            evals/results/latest.json
+            benchmarks/raw/promotion.json
+            release-download
+          retention-days: 1
+      - name: Promote candidate to all traffic
+        run: |
+          gcloud run services update-traffic "$CLOUD_RUN_SERVICE" \
+            --region "$CLOUD_RUN_REGION" \
+            --to-tags candidate=100
+          echo "PROMOTED=true" >> "$GITHUB_ENV"
+      - name: Delete failed candidate engine
+        if: failure() && env.PROMOTED != 'true'
+        run: test ! -f pod.json || uv run python deploy/runpod/delete_pod.py --pod-file pod.json

@@ -1,0 +1,22 @@
+name: cleanup-runpod
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    environment: gpu-staging
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --dev
+      - run: uv run python deploy/runpod/cleanup_expired.py --apply
+        env:
+          RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}

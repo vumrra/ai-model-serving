@@ -1,0 +1,16 @@
+.env
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+benchmarks/raw/*.json
+benchmarks/raw/*.jsonl
+benchmarks/reports/*.html
+releases/generated/
+evals/results/
+pod.json
+cost-report.json
