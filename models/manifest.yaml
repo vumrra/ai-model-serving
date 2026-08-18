@@ -9,6 +9,21 @@ models:
     default_dtype: float32
     chat_template_kwargs:
       enable_thinking: false
+  llama_cpp:
+    repo_id: ggml-org/Qwen3-0.6B-GGUF
+    revision: b5f37287796e5be0ea3dab2e7430873fb3f73e49
+    filename: Qwen3-0.6B-Q4_0.gguf
+    model_alias: qwen3-0.6b
+    license: Apache-2.0
+    purpose: Apple Silicon llama.cpp smoke test
+    quantization: Q4_0
+  mlx_lm:
+    repo_id: mlx-community/Qwen3-0.6B-4bit
+    revision: 73e3e38d981303bc594367cd910ea6eb48349da8
+    model_alias: default_model
+    license: Apache-2.0
+    purpose: Apple Silicon MLX-LM smoke test
+    quantization: 4bit
   benchmark:
     repo_id: Qwen/Qwen3-4B
     revision: 1cfa9a7208912126459214e8b04321603b3df60c

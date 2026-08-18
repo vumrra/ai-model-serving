@@ -19,7 +19,7 @@ Qwen 모델을 API로 제공하고, Transformers·vLLM·SGLang을 같은 조건�
 | --- | --- | --- |
 | 1일 | Mock Engine과 Gateway 수직 슬라이스 | FastAPI, 요청/응답, async |
 | 2일 | Transformers CPU smoke와 계약 테스트 | tokenizer, generation, 테스트 |
-| 3일 | Qwen GGUF를 llama.cpp로 로컬 실행 | 양자화, GGUF, CPU·Metal 최적화 |
+| 3일 | Qwen 4-bit을 llama.cpp·MLX-LM으로 로컬 실행 | 양자화, GGUF, Metal 최적화 |
 | 4일 | L40S에서 vLLM·SGLang 동일 조건 비교 | TTFT, p95, throughput, GPU 메모리 |
 | 5일 | RunPod + Cloud Run CI/CD | image digest, secret, staging, smoke |
 | 6일 | 승격·롤백·장애/비용 실험 | release manifest, 운영 판단 |
@@ -83,6 +83,57 @@ API 서버를 직접 실행하려면 다음 명령을 사용합니다. 기본 �
 ```bash
 task cpu-serve
 ```
+
+## llama.cpp와 MLX-LM 로컬 서버
+
+두 엔진 모두 FastAPI 없이 자체 OpenAI 호환 HTTP 서버를 실행합니다. 모델은
+`models/manifest.yaml`의 commit SHA로 고정되며 첫 실행 때 Hugging Face cache로 받습니다.
+
+llama.cpp는 먼저 설치합니다.
+
+```bash
+brew install llama.cpp
+task llama-serve       # http://127.0.0.1:8003
+task llama-smoke       # 서버를 자동으로 시작해 JSON·SSE 검사 후 종료
+```
+
+Task가 없다면 다음 명령을 직접 실행합니다.
+
+```bash
+uv run --group llama-local python -m scripts.run_local_engine llama_cpp
+```
+
+MLX-LM은 Apple Silicon Mac에서 실행합니다.
+
+```bash
+task mlx-serve         # http://127.0.0.1:8004
+task mlx-smoke         # 서버를 자동으로 시작해 JSON·SSE 검사 후 종료
+```
+
+Task 없이 실행하려면:
+
+```bash
+uv run --group mlx-local python -m scripts.run_local_engine mlx_lm
+```
+
+Gateway를 붙일 때는 엔진별 환경 변수만 바꿉니다.
+
+```bash
+# llama.cpp
+PUBLIC_API_KEY=local-public-key ENGINE_API_KEY= \
+ENGINE_BASE_URL=http://127.0.0.1:8003 ENGINE_MODEL_NAME=qwen3-0.6b \
+uv run uvicorn apps.gateway.main:app --port 8000
+
+# MLX-LM
+PUBLIC_API_KEY=local-public-key ENGINE_API_KEY= \
+ENGINE_BASE_URL=http://127.0.0.1:8004 ENGINE_MODEL_NAME=default_model \
+uv run uvicorn apps.gateway.main:app --port 8000
+```
+
+네이티브 서버는 로컬 개발용이므로 둘 다 `127.0.0.1`에만 바인딩합니다.
+
+`role`은 채팅 템플릿에서 발화자를 구분합니다. `system`은 행동 지침, `user`는 사용자
+입력, `assistant`는 이전 모델 답변입니다.
 
 ## Python 학습 방법
 

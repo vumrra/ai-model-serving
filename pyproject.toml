@@ -20,6 +20,12 @@ cpu-smoke = [
   "torch==2.7.1",
   "transformers==4.54.1",
 ]
+llama-local = [
+  "huggingface-hub>=0.36,<2",
+]
+mlx-local = [
+  "mlx-lm==0.31.3; sys_platform == 'darwin' and platform_machine == 'arm64'",
+]
 dev = [
   "pyright>=1.1,<2",
   "pytest>=8,<10",
@@ -48,6 +54,14 @@ include = ["apps", "benchmarks", "deploy", "engines", "evals", "scripts"]
 
 [tool.uv.sources]
 torch = { index = "pytorch-cpu" }
+
+[tool.uv]
+conflicts = [
+  [
+    { group = "cpu-smoke" },
+    { group = "mlx-local" },
+  ],
+]
 
 [[tool.uv.index]]
 name = "pytorch-cpu"

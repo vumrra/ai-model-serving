@@ -21,6 +21,26 @@ tasks:
     cmds:
       - env RUN_CPU_MODEL_SMOKE=1 uv run --group cpu-smoke pytest tests/integration/test_transformers_cpu_smoke.py
 
+  llama-serve:
+    desc: Qwen3-0.6B Q4_0을 llama.cpp 네이티브 서버로 실행합니다.
+    cmds:
+      - uv run --group llama-local python -m scripts.run_local_engine llama_cpp
+
+  llama-smoke:
+    desc: llama.cpp의 실제 JSON·SSE 계약과 지연을 검사합니다.
+    cmds:
+      - env RUN_LLAMA_MODEL_SMOKE=1 uv run --group llama-local pytest tests/integration/test_local_native_engines.py -k llama
+
+  mlx-serve:
+    desc: Qwen3-0.6B 4bit을 MLX-LM 네이티브 서버로 실행합니다.
+    cmds:
+      - uv run --group mlx-local python -m scripts.run_local_engine mlx_lm
+
+  mlx-smoke:
+    desc: MLX-LM의 실제 JSON·SSE 계약과 지연을 검사합니다.
+    cmds:
+      - env RUN_MLX_MODEL_SMOKE=1 uv run --group mlx-local pytest tests/integration/test_local_native_engines.py -k mlx
+
   test:
     desc: 전체 자동 테스트를 실행합니다.
     cmds:
