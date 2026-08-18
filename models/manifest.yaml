@@ -18,8 +18,8 @@ models:
     purpose: Apple Silicon llama.cpp smoke test
     quantization: Q4_0
   mlx_lm:
-    repo_id: mlx-community/Qwen3-0.6B-4bit
-    revision: 73e3e38d981303bc594367cd910ea6eb48349da8
+    repo_id: mlx-community/Qwen3-4B-4bit
+    revision: 4dcb3d101c2a062e5c1d4bb173588c54ea6c4d25
     model_alias: default_model
     license: Apache-2.0
     purpose: Apple Silicon MLX-LM smoke test
