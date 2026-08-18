@@ -103,6 +103,23 @@ Task가 없다면 다음 명령을 직접 실행합니다.
 uv run --group llama-local python -m scripts.run_local_engine llama_cpp
 ```
 
+```json
+ curl -N http://127.0.0.1:8003/v1/chat/completions \
+    -H 'Content-Type: application/json' \
+    -d '{
+      "model": "qwen3-0.6b",
+      "messages": [
+        {"role": "user", "content": "서울을 한 문장으로 설명해줘"}
+      ],
+      "max_tokens": 64,
+      "temperature": 0,
+      "chat_template_kwargs": {
+        "enable_thinking": false
+      },
+      "stream": true
+    }'
+```
+
 MLX-LM은 Apple Silicon Mac에서 실행합니다.
 
 ```bash
@@ -114,6 +131,23 @@ Task 없이 실행하려면:
 
 ```bash
 uv run --group mlx-local python -m scripts.run_local_engine mlx_lm
+```
+
+```json
+ curl -N http://127.0.0.1:8004/v1/chat/completions \
+    -H 'Content-Type: application/json' \
+    -d '{
+      "model": "default_model",
+      "messages": [
+        {"role": "user", "content": "서울을 한 문장으로 설명해줘"}
+      ],
+      "max_tokens": 200,
+      "temperature": 0,
+      "chat_template_kwargs": {
+        "enable_thinking": false
+      },
+      "stream": true
+    }'
 ```
 
 Gateway를 붙일 때는 엔진별 환경 변수만 바꿉니다.
