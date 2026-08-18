@@ -14,6 +14,12 @@ dependencies = [
 ]
 
 [dependency-groups]
+cpu-smoke = [
+  "accelerate==1.9.0",
+  "safetensors==0.5.3",
+  "torch==2.7.1",
+  "transformers==4.54.1",
+]
 dev = [
   "pyright>=1.1,<2",
   "pytest>=8,<10",
@@ -39,6 +45,14 @@ select = ["E", "F", "I", "B", "UP"]
 pythonVersion = "3.11"
 typeCheckingMode = "basic"
 include = ["apps", "benchmarks", "deploy", "engines", "evals", "scripts"]
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 [tool.coverage.run]
 source = ["apps/gateway"]

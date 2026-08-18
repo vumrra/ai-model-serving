@@ -19,9 +19,10 @@ Qwen 모델을 API로 제공하고, Transformers·vLLM·SGLang을 같은 조건�
 | --- | --- | --- |
 | 1일 | Mock Engine과 Gateway 수직 슬라이스 | FastAPI, 요청/응답, async |
 | 2일 | Transformers CPU smoke와 계약 테스트 | tokenizer, generation, 테스트 |
-| 3일 | L40S에서 vLLM·SGLang 동일 조건 비교 | TTFT, p95, throughput, GPU 메모리 |
-| 4일 | RunPod + Cloud Run CI/CD | image digest, secret, staging, smoke |
-| 5일 | 승격·롤백·장애/비용 실험 | release manifest, 운영 판단 |
+| 3일 | Qwen GGUF를 llama.cpp로 로컬 실행 | 양자화, GGUF, CPU·Metal 최적화 |
+| 4일 | L40S에서 vLLM·SGLang 동일 조건 비교 | TTFT, p95, throughput, GPU 메모리 |
+| 5일 | RunPod + Cloud Run CI/CD | image digest, secret, staging, smoke |
+| 6일 | 승격·롤백·장애/비용 실험 | release manifest, 운영 판단 |
 
 KServe는 버린 선택지가 아닙니다. 이번 데모는 엔진 최적화와 API 배포를 먼저 경험하기
 위해 Cloud Run과 RunPod로 구성합니다. 이후 여러 모델, 자동 확장, canary rollout을
@@ -66,6 +67,22 @@ task verify
 ```
 
 Task가 없다면 각 명령의 `uv run ...` 부분을 직접 실행해도 됩니다.
+
+## Transformers CPU smoke
+
+실제 `Qwen/Qwen3-0.6B`를 `models/manifest.yaml`의 고정 revision으로 내려받아
+CPU에서 JSON과 SSE 계약을 확인합니다. 첫 실행에는 약 1.5GB 모델 다운로드가 필요합니다.
+
+```bash
+task cpu-smoke
+```
+
+API 서버를 직접 실행하려면 다음 명령을 사용합니다. 기본 주소는
+`http://127.0.0.1:8002`입니다.
+
+```bash
+task cpu-serve
+```
 
 ## Python 학습 방법
 

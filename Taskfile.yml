@@ -11,6 +11,16 @@ tasks:
     cmds:
       - uv run python scripts/run_local.py
 
+  cpu-serve:
+    desc: 실제 Qwen3-0.6B를 CPU에서 실행합니다.
+    cmds:
+      - uv run --group cpu-smoke python -m scripts.run_transformers_cpu
+
+  cpu-smoke:
+    desc: 실제 Qwen3-0.6B의 CPU JSON·SSE 계약을 검사합니다.
+    cmds:
+      - env RUN_CPU_MODEL_SMOKE=1 uv run --group cpu-smoke pytest tests/integration/test_transformers_cpu_smoke.py
+
   test:
     desc: 전체 자동 테스트를 실행합니다.
     cmds:
