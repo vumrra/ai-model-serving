@@ -31,6 +31,7 @@ _CHAT_UI = Path(__file__).with_name("chat.html")
 _LOCAL_ENGINES = {
     "llama_cpp": ("llama.cpp", "http://127.0.0.1:8003", "qwen3-0.6b"),
     "mlx_lm": ("MLX-LM", "http://127.0.0.1:8004", "default_model"),
+    "kserve_mlx": ("KServe · MLX-LM", "http://127.0.0.1:8005", "default_model"),
 }
 
 
@@ -293,7 +294,7 @@ def create_app(
         async def ui_chat_completions(
             payload: ChatCompletionRequest,
             request: Request,
-            engine: Literal["llama_cpp", "mlx_lm"],
+            engine: Literal["llama_cpp", "mlx_lm", "kserve_mlx"],
             _: str = Depends(authorize_and_limit),
         ) -> Any:
             _validate_request(payload, settings)

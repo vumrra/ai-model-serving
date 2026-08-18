@@ -1,0 +1,9 @@
+# Kind가 로컬에서 load한 image를 사용한다.
+runtime:
+  image: qwen-mlx-cpu:local
+  imagePullPolicy: IfNotPresent
+
+# 단일 노드에서 기존·신규 4GB Pod를 동시에 예약하지 않는다.
+predictor:
+  deploymentStrategy:
+    type: Recreate

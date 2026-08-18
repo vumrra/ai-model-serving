@@ -77,6 +77,7 @@ def test_chat_ui_reports_each_local_engine_status(client: TestClient):
         "engines": [
             {"id": "llama_cpp", "name": "llama.cpp", "ready": True},
             {"id": "mlx_lm", "name": "MLX-LM", "ready": False},
+            {"id": "kserve_mlx", "name": "KServe · MLX-LM", "ready": True},
         ]
     }
 
@@ -86,7 +87,7 @@ def test_chat_ui_streams_from_selected_engine(
 ):
     with client.stream(
         "POST",
-        "/ui/chat/completions?engine=mlx_lm",
+        "/ui/chat/completions?engine=kserve_mlx",
         headers=_headers(),
         json=_payload(),
     ) as response:
@@ -96,7 +97,7 @@ def test_chat_ui_streams_from_selected_engine(
     assert response.headers["content-type"].startswith("text/event-stream")
     assert "선택된 엔진의 응답" in content
     assert content.endswith("data: [DONE]\n\n")
-    assert engine_requests == [(8004, "default_model")]
+    assert engine_requests == [(8005, "default_model")]
 
 
 def test_chat_ui_rejects_unknown_engine(client: TestClient):

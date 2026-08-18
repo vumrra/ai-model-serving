@@ -1,8 +1,42 @@
 # Kubernetes 모델 서빙 가이드
 
 이 문서는 Qwen Serving Lab에서 Kubernetes, KServe, Argo CD, Knative를 왜 사용하고 언제
-선택하는지 정리합니다. Kubernetes 관련 manifest는 아직 구현 전이며 README 로드맵의
-5일차부터 순서대로 추가합니다.
+선택하는지 정리합니다. 현재는 Kind에 KServe Standard Mode와 MLX-LM CPU runtime을 배포하는
+로컬 경로까지 구현되어 있습니다.
+
+## 로컬 구현
+
+```text
+브라우저 Chat UI
+  → Gateway :8000
+  → kubectl port-forward :8005
+  → qwen-mlx-predictor Service
+  → KServe InferenceService
+  → MLX-LM Linux CPU
+  → mlx-community/Qwen3-4B-4bit
+```
+
+| 파일 | 역할 |
+| --- | --- |
+| `engines/mlx_cpu/Dockerfile` | Linux CPU용 MLX-LM image |
+| `deploy/kubernetes/kind.yaml` | 단일 노드 로컬 cluster |
+| `deploy/kubernetes/kserve-values.yaml` | KServe Standard Mode 설정 |
+| `charts/qwen-serving/templates/servingruntime.yaml` | MLX-LM 실행 방법 |
+| `charts/qwen-serving/templates/inferenceservice.yaml` | 모델 replica와 runtime 연결 |
+| `charts/qwen-serving/values-local-mlx-cpu.yaml` | Kind용 로컬 image 설정 |
+
+```bash
+task kind-up
+task kserve-install
+task mlx-kind-image
+task kserve-deploy
+task kserve-forward
+```
+
+MLX의 Linux CPU wheel은 glibc 2.35 이상을 요구하므로 image는 Debian 12 기반 Python을
+사용합니다. 모델 revision은 mutable한 `main` 대신 manifest와 같은 commit SHA로 고정합니다.
+이 경로는 Kubernetes와 KServe 동작 확인용이며 성능 비교용은 아닙니다. 실제 엔진 비교는
+GPU cluster에서 vLLM과 SGLang으로 진행합니다.
 
 ## 전체 구조
 

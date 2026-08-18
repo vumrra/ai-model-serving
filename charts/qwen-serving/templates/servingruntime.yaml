@@ -1,0 +1,49 @@
+apiVersion: serving.kserve.io/v1alpha1
+kind: ServingRuntime
+metadata:
+  name: {{ .Values.runtime.name }}
+  labels:
+    app.kubernetes.io/name: {{ .Chart.Name }}
+spec:
+  supportedModelFormats:
+    - name: {{ .Values.model.format }}
+      version: "1"
+      autoSelect: false
+  protocolVersions:
+    - v1
+  storageHelper:
+    disabled: true
+  containers:
+    - name: kserve-container
+      image: {{ required "runtime.image is required" .Values.runtime.image | quote }}
+      imagePullPolicy: {{ .Values.runtime.imagePullPolicy }}
+      ports:
+        - name: http1
+          containerPort: {{ .Values.runtime.port }}
+          protocol: TCP
+      env:
+        - name: MODEL_ID
+          value: {{ .Values.model.id | quote }}
+        - name: MODEL_REVISION
+          value: {{ .Values.model.revision | quote }}
+        - name: SERVED_MODEL_NAME
+          value: {{ .Values.model.alias | quote }}
+        - name: ENABLE_THINKING
+          value: {{ .Values.model.enableThinking | quote }}
+        {{- range $name, $value := .Values.runtime.env }}
+        - name: {{ $name }}
+          value: {{ $value | quote }}
+        {{- end }}
+      startupProbe:
+        httpGet:
+          path: /v1/models
+          port: {{ .Values.runtime.port }}
+        periodSeconds: 10
+        failureThreshold: 180
+      readinessProbe:
+        httpGet:
+          path: /v1/models
+          port: {{ .Values.runtime.port }}
+        periodSeconds: 10
+      resources:
+        {{- toYaml .Values.resources | nindent 8 }}

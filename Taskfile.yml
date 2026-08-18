@@ -41,10 +41,54 @@ tasks:
     cmds:
       - env RUN_MLX_MODEL_SMOKE=1 uv run --group mlx-local pytest tests/integration/test_local_native_engines.py -k mlx
 
+  kind-up:
+    desc: 로컬 Qwen 실습용 Kind cluster를 생성합니다.
+    preconditions:
+      - sh: command -v kind
+        msg: "kind가 필요합니다: brew install kind"
+    cmds:
+      - kind create cluster --config deploy/kubernetes/kind.yaml
+
+  kserve-install:
+    desc: Kind에 cert-manager와 KServe Standard Mode를 설치합니다.
+    cmds:
+      - helm upgrade --install cert-manager oci://quay.io/jetstack/charts/cert-manager --version v1.17.2 --namespace cert-manager --create-namespace --set crds.enabled=true --wait --timeout 10m
+      - helm upgrade --install kserve-crd oci://ghcr.io/kserve/charts/kserve-crd --version v0.19.0 --namespace kserve --create-namespace --wait
+      - helm upgrade --install kserve oci://ghcr.io/kserve/charts/kserve-resources --version v0.19.0 --namespace kserve --values deploy/kubernetes/kserve-values.yaml --wait --timeout 10m
+
+  mlx-kind-image:
+    desc: Linux CPU용 MLX-LM image를 빌드하고 Kind에 넣습니다.
+    cmds:
+      - docker build --file engines/mlx_cpu/Dockerfile --tag qwen-mlx-cpu:local .
+      - kind load docker-image qwen-mlx-cpu:local --name qwen-serving
+
+  kserve-deploy:
+    desc: Qwen3-4B-4bit MLX-LM InferenceService를 배포합니다.
+    cmds:
+      - helm upgrade --install qwen-mlx charts/qwen-serving --namespace qwen-serving --create-namespace --values charts/qwen-serving/values-local-mlx-cpu.yaml
+      - kubectl --namespace qwen-serving rollout status deployment/qwen-mlx-predictor --timeout=20m
+      - kubectl --namespace qwen-serving wait --for=condition=Ready inferenceservice/qwen-mlx --timeout=20m
+
+  kserve-forward:
+    desc: Chat UI가 KServe의 MLX-LM을 사용하도록 8005 포트를 연결합니다.
+    cmds:
+      - kubectl --namespace qwen-serving port-forward service/qwen-mlx-predictor 8005:80
+
+  kserve-verify:
+    desc: cluster 없이 Helm chart와 MLX entrypoint를 검증합니다.
+    cmds:
+      - helm lint charts/qwen-serving --values charts/qwen-serving/values-local-mlx-cpu.yaml
+      - env UV_CACHE_DIR=/private/tmp/qwen-serving-uv-cache uv run pytest tests/unit/test_kubernetes_chart.py
+
+  kind-down:
+    desc: 로컬 Qwen Kind cluster를 삭제합니다.
+    cmds:
+      - kind delete cluster --name qwen-serving
+
   chat-ui:
     desc: 실행 중인 llama.cpp 또는 MLX-LM을 선택하는 로컬 Chat UI를 엽니다.
     cmds:
-      - env CHAT_UI_ENABLED=true PUBLIC_API_KEY=local-public-key MODEL_ALIAS=qwen-demo RATE_LIMIT_REQUESTS=100 uv run uvicorn apps.gateway.main:app --host 127.0.0.1 --port 8000
+      - env CHAT_UI_ENABLED=true PUBLIC_API_KEY=local-public-key MODEL_ALIAS=qwen-demo RATE_LIMIT_REQUESTS=100 UPSTREAM_TIMEOUT_SECONDS=600 uv run uvicorn apps.gateway.main:app --host 127.0.0.1 --port 8000
 
   gpu-verify:
     desc: RunPod을 생성하지 않고 4일차 GPU workflow와 smoke 구성을 검증합니다.
