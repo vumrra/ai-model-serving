@@ -96,6 +96,14 @@ tasks:
       - uv run python scripts/verify_gpu_workflow.py
       - uv run pytest tests/unit/test_runpod_payload.py tests/unit/test_runpod_readiness.py tests/unit/test_gpu_workflow.py tests/load/test_benchmark_runner.py tests/load/test_benchmark_summary.py
 
+  architecture:
+    desc: README의 모델 서빙과 CI/CD 아키텍처 PNG를 생성합니다.
+    preconditions:
+      - sh: command -v dot
+        msg: "Graphviz가 필요합니다: brew install graphviz"
+    cmds:
+      - uv run --group docs python scripts/generate_architecture.py
+
   test:
     desc: 전체 자동 테스트를 실행합니다.
     cmds:

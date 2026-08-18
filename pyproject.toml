@@ -14,6 +14,9 @@ dependencies = [
 ]
 
 [dependency-groups]
+docs = [
+  "diagrams>=0.25,<1",
+]
 cpu-smoke = [
   "accelerate==1.9.0",
   "safetensors==0.5.3",

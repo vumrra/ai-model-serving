@@ -27,6 +27,47 @@ Qwen 모델을 API로 제공하고, Transformers·vLLM·SGLang을 같은 조건�
 | 8일 | 예정 | Argo CD GitOps와 관측성 | image digest, Helm, Prometheus, Grafana |
 | 9일 | 예정 | 확장·canary·rollback·장애/비용 실험 | KEDA, Knative 선택, 운영 판단 |
 
+## 최종 모델 서빙 아키텍처
+
+아래는 로드맵을 완료했을 때의 운영 목표입니다. 현재 Kind에는 Model Pod만 배포되어 있고
+Gateway와 Chat UI는 Mac에서 실행됩니다. 운영에서는 Gateway/UI와 모델을 모두 GKE에
+배포하되, 일반 웹 애플리케이션과 모델 serving 영역을 분리합니다.
+
+### API 요청과 Kubernetes 구성
+
+![최종 Qwen 모델 서빙 아키텍처](docs/assets/final-serving-architecture.png)
+
+외부에는 Gateway만 공개합니다. 모델 Service는 cluster 내부에서만 접근하며, 실제 추론은
+vLLM 또는 SGLang이 담당하고 KServe는 모델 Pod의 배포와 수명주기를 관리합니다.
+
+### CI/CD와 GitOps 흐름
+
+![최종 Qwen CI/CD와 GitOps 아키텍처](docs/assets/final-serving-cicd.png)
+
+GitHub Actions는 테스트와 image 빌드를 담당하고, Argo CD는 Git에 기록된 Helm values를
+cluster에 지속적으로 동기화합니다. 배포 실패 시 cluster를 직접 수정하지 않고 이전 image
+digest가 들어 있는 Git commit으로 되돌립니다.
+
+두 이미지는 Python 코드로 관리합니다. Graphviz 설치 후 아래 명령으로 다시 생성합니다.
+
+```bash
+brew install graphviz
+task architecture
+```
+
+생성 코드는 [`scripts/generate_architecture.py`](scripts/generate_architecture.py)에 있습니다.
+
+| 구성 요소 | 최종 역할 |
+| --- | --- |
+| Gateway Pod | Chat UI, 공개 API, 인증, 요청 검증과 엔진 라우팅 |
+| KServe | `ServingRuntime`과 `InferenceService`를 Deployment·Service로 변환 |
+| vLLM/SGLang | GPU에서 Qwen 모델을 실제로 로딩하고 추론 |
+| Helm | 환경별 values로 Kubernetes/KServe YAML 생성 |
+| GitHub Actions | 테스트, image build, GPU smoke와 digest 생성 |
+| Argo CD | Git의 Helm 설정을 staging/production cluster에 동기화 |
+| Prometheus/Grafana | API 지연, TTFT, 오류율, queue와 GPU metric 관측 |
+| KEDA/Knative | queue 확장 또는 scale-to-zero가 필요할 때만 추가 |
+
 기본 운영 경로는 KServe Standard Mode입니다. Knative는 모델 cold start를 감수하고
 scale-to-zero와 revision 기반 트래픽 관리가 필요할 때만 선택합니다. 상세한 도구 역할과
 선택 기준은 [Kubernetes 모델 서빙 가이드](docs/kubernetes-serving.md)에 정리했습니다.
