@@ -27,3 +27,9 @@ def test_settings_reads_deployment_environment_names(monkeypatch):
     assert settings.upstream_base_url == "http://engine:8000"
     assert settings.upstream_model_name == "Qwen/Qwen3-4B"
     assert settings.public_model_name == "qwen3-4b"
+
+
+def test_chat_ui_is_enabled_explicitly(monkeypatch):
+    monkeypatch.setenv("CHAT_UI_ENABLED", "true")
+
+    assert Settings.from_env().chat_ui_enabled is True

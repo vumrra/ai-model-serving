@@ -13,21 +13,24 @@ Qwen 모델을 API로 제공하고, Transformers·vLLM·SGLang을 같은 조건�
 최종 결과는 맞습니다. 사용자가 문장을 보내면 Gateway가 선택된 Qwen 엔진에 요청하고,
 일반 JSON 또는 토큰 단위 SSE로 답변을 반환합니다.
 
-## 이번 주 완성 순서
+## 구현 로드맵
 
-| 일차 | 구현 결과 | 배우는 핵심 |
-| --- | --- | --- |
-| 1일 | Mock Engine과 Gateway 수직 슬라이스 | FastAPI, 요청/응답, async |
-| 2일 | Transformers CPU smoke와 계약 테스트 | tokenizer, generation, 테스트 |
-| 3일 | Qwen 4-bit을 llama.cpp·MLX-LM으로 로컬 실행 | 양자화, GGUF, Metal 최적화 |
-| 4일 | L40S에서 vLLM·SGLang 동일 조건 비교 | TTFT, p95, throughput, GPU 메모리 |
-| 5일 | RunPod + Cloud Run CI/CD | image digest, secret, staging, smoke |
-| 6일 | 승격·롤백·장애/비용 실험 | release manifest, 운영 판단 |
+| 일차 | 상태 | 구현 결과 | 배우는 핵심 |
+| --- | --- | --- | --- |
+| 1일 | 완료 | Mock Engine과 Gateway 수직 슬라이스 | FastAPI, 요청/응답, async |
+| 2일 | 완료 | Transformers CPU smoke와 계약 테스트 | tokenizer, generation, 테스트 |
+| 3일 | 완료 | llama.cpp·MLX-LM 로컬 실행 | 양자화, GGUF, Metal |
+| 4일 | 예정 | vLLM·SGLang GPU 이미지와 L40S smoke | CUDA, 엔진 실행 옵션 |
+| 5일 | 예정 | GPU Kubernetes와 KServe Standard Mode | GPU scheduling, CRD |
+| 6일 | 예정 | 두 `ServingRuntime`·`InferenceService` 배포 | 선언형 모델 서빙, readiness |
+| 7일 | 예정 | 동일 조건 엔진 비교 | TTFT, TPOT, p95, throughput, GPU 메모리 |
+| 8일 | 예정 | Argo CD GitOps와 관측성 | image digest, Helm, Prometheus, Grafana |
+| 9일 | 예정 | 확장·canary·rollback·장애/비용 실험 | KEDA, Knative 선택, 운영 판단 |
 
-KServe는 버린 선택지가 아닙니다. 이번 데모는 엔진 최적화와 API 배포를 먼저 경험하기
-위해 Cloud Run과 RunPod로 구성합니다. 이후 여러 모델, 자동 확장, canary rollout을
-Kubernetes에서 운영해야 할 때 동일한 엔진 컨테이너를 KServe `InferenceService`로
-옮기는 확장 과제로 남깁니다.
+기본 운영 경로는 KServe Standard Mode입니다. Knative는 모델 cold start를 감수하고
+scale-to-zero와 revision 기반 트래픽 관리가 필요할 때만 선택합니다. 상세한 도구 역할과
+선택 기준은 [Kubernetes 모델 서빙 가이드](docs/kubernetes-serving.md)에 정리했습니다.
+[최종 아키텍처 HTML](docs/ai-serving-architecture.html)에서는 API와 CI/CD 흐름을 함께 볼 수 있습니다.
 
 ## 빠른 시작
 
@@ -103,7 +106,7 @@ Task가 없다면 다음 명령을 직접 실행합니다.
 uv run --group llama-local python -m scripts.run_local_engine llama_cpp
 ```
 
-```json
+```bash
  curl -N http://127.0.0.1:8003/v1/chat/completions \
     -H 'Content-Type: application/json' \
     -d '{
@@ -133,7 +136,7 @@ Task 없이 실행하려면:
 uv run --group mlx-local python -m scripts.run_local_engine mlx_lm
 ```
 
-```json
+```bash
  curl -N http://127.0.0.1:8004/v1/chat/completions \
     -H 'Content-Type: application/json' \
     -d '{
@@ -149,6 +152,25 @@ uv run --group mlx-local python -m scripts.run_local_engine mlx_lm
       "stream": true
     }'
 ```
+
+### 로컬 Chat UI
+
+실행할 엔진 하나 또는 둘을 먼저 켜고 UI Gateway를 실행합니다.
+
+```bash
+# 터미널 1
+task llama-serve
+
+# 터미널 2: MLX-LM도 함께 비교할 때만 실행
+task mlx-serve
+
+# 터미널 3
+task chat-ui
+```
+
+브라우저에서 [http://127.0.0.1:8000](http://127.0.0.1:8000)을 열고 llama.cpp 또는 MLX-LM을
+선택합니다. 모델 응답은 SSE로 들어오는 즉시 화면에 표시됩니다. 기본 로컬 API key는
+`local-public-key`입니다. UI는 `CHAT_UI_ENABLED=true`일 때만 노출됩니다.
 
 Gateway를 붙일 때는 엔진별 환경 변수만 바꿉니다.
 
@@ -196,6 +218,8 @@ releases/      immutable release manifest schema
 
 실제 계정 연결에 필요한 secret과 workflow 순서는
 [docs/cicd-setup.md](docs/cicd-setup.md)에 정리했습니다.
+Kubernetes·KServe·Argo CD·Knative의 역할과 선택 기준은
+[docs/kubernetes-serving.md](docs/kubernetes-serving.md)를 참고합니다.
 
 ## 프로젝트 원칙
 
@@ -214,3 +238,6 @@ releases/      immutable release manifest schema
 - staging smoke 이후에만 demo 트래픽을 승격할 수 있다.
 - 이전 image와 model revision으로 rollback할 수 있다.
 - RunPod 작업에 TTL과 비용 상한이 적용된다.
+- KServe가 vLLM·SGLang을 동일한 GPU 조건으로 배포한다.
+- Argo CD가 Git에 고정된 image digest와 manifest를 클러스터에 반영한다.
+- Knative 사용 여부를 cold start와 scale-to-zero 요구로 판단할 수 있다.

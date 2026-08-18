@@ -41,6 +41,11 @@ tasks:
     cmds:
       - env RUN_MLX_MODEL_SMOKE=1 uv run --group mlx-local pytest tests/integration/test_local_native_engines.py -k mlx
 
+  chat-ui:
+    desc: 실행 중인 llama.cpp 또는 MLX-LM을 선택하는 로컬 Chat UI를 엽니다.
+    cmds:
+      - env CHAT_UI_ENABLED=true PUBLIC_API_KEY=local-public-key MODEL_ALIAS=qwen-demo RATE_LIMIT_REQUESTS=100 uv run uvicorn apps.gateway.main:app --host 127.0.0.1 --port 8000
+
   test:
     desc: 전체 자동 테스트를 실행합니다.
     cmds:

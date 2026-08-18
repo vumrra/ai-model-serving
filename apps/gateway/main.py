@@ -1,16 +1,19 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import re
 import uuid
 from collections.abc import AsyncIterator
-from typing import Any
+from dataclasses import replace
+from pathlib import Path
+from typing import Any, Literal
 
 import httpx
 from fastapi import Depends, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 
 from apps.gateway.config import Settings
 from apps.gateway.errors import GatewayError
@@ -24,6 +27,11 @@ from apps.gateway.schemas import (
 from apps.gateway.upstream import UpstreamClient
 
 _REQUEST_ID = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
+_CHAT_UI = Path(__file__).with_name("chat.html")
+_LOCAL_ENGINES = {
+    "llama_cpp": ("llama.cpp", "http://127.0.0.1:8003", "qwen3-0.6b"),
+    "mlx_lm": ("MLX-LM", "http://127.0.0.1:8004", "default_model"),
+}
 
 
 def _request_id(request: Request) -> str:
@@ -87,6 +95,19 @@ def create_app(
     application.state.upstream = UpstreamClient(
         settings, upstream_transport, application.state.metrics
     )
+    application.state.ui_upstreams = {
+        engine: UpstreamClient(
+            replace(
+                settings,
+                upstream_base_url=base_url,
+                upstream_model_name=model,
+                upstream_api_key="",
+            ),
+            upstream_transport,
+            application.state.metrics,
+        )
+        for engine, (_, base_url, model) in _LOCAL_ENGINES.items()
+    }
 
     @application.middleware("http")
     async def request_context(request: Request, call_next: Any) -> JSONResponse:
@@ -209,24 +230,20 @@ def create_app(
             serving_config_sha256=settings.serving_config_sha256,
         )
 
-    @application.post("/v1/chat/completions")
-    async def chat_completions(
+    async def proxy_completion(
         payload: ChatCompletionRequest,
         request: Request,
-        _: str = Depends(authorize_and_limit),
+        upstream: UpstreamClient,
     ) -> Any:
-        _validate_request(payload, settings)
         upstream_payload = payload.model_dump()
-        upstream_payload["model"] = settings.upstream_model_name
+        upstream_payload["model"] = upstream.settings.upstream_model_name
         upstream_payload["chat_template_kwargs"] = {"enable_thinking": False}
         request_id = _request_id(request)
         application.state.metrics.active.inc()
 
         if payload.stream:
             try:
-                iterator = await application.state.upstream.stream(
-                    upstream_payload, request_id, request
-                )
+                iterator = await upstream.stream(upstream_payload, request_id, request)
             except Exception:
                 application.state.metrics.active.dec()
                 raise
@@ -248,11 +265,48 @@ def create_app(
             )
 
         try:
-            result = await application.state.upstream.complete(upstream_payload, request_id)
+            result = await upstream.complete(upstream_payload, request_id)
             result["model"] = settings.public_model_name
             return JSONResponse(result)
         finally:
             application.state.metrics.active.dec()
+
+    if settings.chat_ui_enabled:
+
+        @application.get("/", include_in_schema=False)
+        async def chat_ui() -> FileResponse:
+            return FileResponse(_CHAT_UI, media_type="text/html")
+
+        @application.get("/ui/engines", include_in_schema=False)
+        async def ui_engines(_: str = Depends(authorize_and_limit)) -> dict[str, Any]:
+            ready = await asyncio.gather(
+                *(upstream.is_ready() for upstream in application.state.ui_upstreams.values())
+            )
+            return {
+                "engines": [
+                    {"id": engine, "name": config[0], "ready": status}
+                    for (engine, config), status in zip(_LOCAL_ENGINES.items(), ready, strict=True)
+                ]
+            }
+
+        @application.post("/ui/chat/completions", include_in_schema=False)
+        async def ui_chat_completions(
+            payload: ChatCompletionRequest,
+            request: Request,
+            engine: Literal["llama_cpp", "mlx_lm"],
+            _: str = Depends(authorize_and_limit),
+        ) -> Any:
+            _validate_request(payload, settings)
+            return await proxy_completion(payload, request, application.state.ui_upstreams[engine])
+
+    @application.post("/v1/chat/completions")
+    async def chat_completions(
+        payload: ChatCompletionRequest,
+        request: Request,
+        _: str = Depends(authorize_and_limit),
+    ) -> Any:
+        _validate_request(payload, settings)
+        return await proxy_completion(payload, request, application.state.upstream)
 
     return application
 

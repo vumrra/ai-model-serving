@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Local Model Chat</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: light-dark(#ffffff, #212121);
+      --side: light-dark(#f7f7f8, #171717);
+      --card: light-dark(#f4f4f4, #2f2f2f);
+      --text: light-dark(#212121, #ececec);
+      --muted: light-dark(#6b6b6b, #a6a6a6);
+      --line: light-dark(#dedede, #424242);
+      --accent: #10a37f;
+      --danger: #ef4444;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      height: 100vh;
+      overflow: hidden;
+      color: var(--text);
+      background: var(--bg);
+      font: 14px/1.55 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    button, select, textarea, input { font: inherit; }
+    button { color: inherit; cursor: pointer; }
+    .app { display: grid; grid-template-columns: 260px 1fr; height: 100vh; }
+    aside {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      padding: 14px;
+      border-right: 1px solid var(--line);
+      background: var(--side);
+    }
+    .brand { padding: 8px 4px 2px; font-size: 16px; font-weight: 700; }
+    .new-chat, .stop {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px 12px;
+      background: transparent;
+      text-align: left;
+    }
+    .new-chat:hover, .stop:hover { background: var(--card); }
+    .settings { display: grid; gap: 8px; }
+    label { color: var(--muted); font-size: 12px; font-weight: 600; }
+    select, input {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      padding: 9px 10px;
+      color: var(--text);
+      background: var(--bg);
+    }
+    .engine-status { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+    .dot.online { background: var(--accent); }
+    .dot.offline { background: var(--danger); }
+    .side-note { margin-top: auto; color: var(--muted); font-size: 11px; }
+    main { position: relative; display: grid; grid-template-rows: 54px 1fr auto; min-width: 0; }
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-bottom: 1px solid var(--line);
+      font-weight: 600;
+    }
+    #messages { overflow-y: auto; padding: 28px 20px 160px; }
+    .empty {
+      display: grid;
+      place-items: center;
+      height: 70%;
+      color: var(--muted);
+      text-align: center;
+    }
+    .empty strong { display: block; margin-bottom: 6px; color: var(--text); font-size: 24px; }
+    .message { display: grid; grid-template-columns: 30px minmax(0, 720px); gap: 12px; max-width: 780px; margin: 0 auto 26px; }
+    .avatar {
+      display: grid;
+      place-items: center;
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      color: #fff;
+      background: #555;
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .assistant .avatar { background: var(--accent); }
+    .bubble { min-width: 0; padding-top: 3px; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .meta { margin-bottom: 4px; color: var(--muted); font-size: 11px; }
+    .composer-wrap {
+      position: absolute;
+      right: 0;
+      bottom: 0;
+      left: 0;
+      padding: 36px 20px 18px;
+      background: linear-gradient(transparent, var(--bg) 35%);
+    }
+    form {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: end;
+      gap: 8px;
+      max-width: 780px;
+      margin: auto;
+      padding: 10px 10px 10px 16px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: var(--card);
+      box-shadow: 0 8px 30px rgb(0 0 0 / 8%);
+    }
+    textarea {
+      max-height: 180px;
+      min-height: 24px;
+      resize: none;
+      border: 0;
+      outline: 0;
+      color: var(--text);
+      background: transparent;
+    }
+    .send {
+      display: grid;
+      place-items: center;
+      width: 34px;
+      height: 34px;
+      border: 0;
+      border-radius: 9px;
+      color: #fff;
+      background: var(--accent);
+      font-size: 18px;
+    }
+    .send:disabled { cursor: default; opacity: .4; }
+    .stop { display: none; margin-top: 8px; text-align: center; }
+    .stop.visible { display: block; }
+    @media (max-width: 720px) {
+      .app { grid-template-columns: 1fr; }
+      aside { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; border: 0; border-bottom: 1px solid var(--line); }
+      .brand, .side-note { display: none; }
+      .new-chat { grid-row: 1; }
+      .settings { grid-column: 1 / -1; grid-template-columns: 1fr 1fr; }
+      .engine-status { grid-column: 1 / -1; }
+      main { height: calc(100vh - 154px); }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside>
+      <div class="brand">Local Model Chat</div>
+      <button class="new-chat" id="new-chat" type="button">＋ 새 대화</button>
+      <div class="settings">
+        <label for="engine">실행 엔진</label>
+        <select id="engine">
+          <option value="llama_cpp">llama.cpp · 8003</option>
+          <option value="mlx_lm">MLX-LM · 8004</option>
+        </select>
+        <label for="api-key">로컬 API 키</label>
+        <input id="api-key" type="password" value="local-public-key" autocomplete="off">
+        <div class="engine-status"><span class="dot" id="status-dot"></span><span id="status-text">확인 중</span></div>
+      </div>
+      <button class="stop" id="stop" type="button">생성 중지</button>
+      <div class="side-note">로컬 테스트 전용 · 응답은 Markdown 렌더링 없이 안전한 텍스트로 표시됩니다.</div>
+    </aside>
+
+    <main>
+      <header id="title">모델 확인 중</header>
+      <div id="messages">
+        <div class="empty" id="empty"><div><strong>무엇이든 물어보세요</strong>로컬에서 실행 중인 엔진을 선택하고 메시지를 보내세요.</div></div>
+      </div>
+      <div class="composer-wrap">
+        <form id="composer">
+          <textarea id="prompt" rows="1" placeholder="메시지를 입력하세요" aria-label="메시지"></textarea>
+          <button class="send" id="send" type="submit" aria-label="전송">↑</button>
+        </form>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const messages = [];
+    let model = "qwen-demo";
+    let controller = null;
+    let engineStates = {};
+
+    function render() {
+      $("empty").hidden = messages.length > 0;
+      document.querySelectorAll(".message").forEach((node) => node.remove());
+      for (const message of messages) {
+        const row = document.createElement("div");
+        row.className = `message ${message.role}`;
+        const avatar = document.createElement("div");
+        avatar.className = "avatar";
+        avatar.textContent = message.role === "user" ? "나" : "AI";
+        const body = document.createElement("div");
+        const meta = document.createElement("div");
+        meta.className = "meta";
+        meta.textContent = message.role === "user" ? "You" : message.engine;
+        const bubble = document.createElement("div");
+        bubble.className = "bubble";
+        bubble.textContent = message.content || "생성 중…";
+        body.append(meta, bubble);
+        row.append(avatar, body);
+        $("messages").append(row);
+      }
+      $("messages").scrollTop = $("messages").scrollHeight;
+    }
+
+    function updateStatus() {
+      const state = engineStates[$("engine").value];
+      $("status-dot").className = `dot ${state === true ? "online" : state === false ? "offline" : ""}`;
+      $("status-text").textContent = state === true ? "연결됨" : state === false ? "연결 안 됨" : "확인 중";
+    }
+
+    async function loadStatus() {
+      try {
+        const headers = {Authorization: `Bearer ${$("api-key").value}`};
+        const [version, engines] = await Promise.all([
+          fetch("/version").then((response) => response.json()),
+          fetch("/ui/engines", {headers}).then((response) => {
+            if (!response.ok) throw new Error("API 키를 확인하세요.");
+            return response.json();
+          }),
+        ]);
+        model = version.model;
+        $("title").textContent = model;
+        engineStates = Object.fromEntries(engines.engines.map((engine) => [engine.id, engine.ready]));
+      } catch (error) {
+        $("status-text").textContent = error.message;
+      }
+      updateStatus();
+    }
+
+    function setGenerating(active) {
+      $("send").disabled = active;
+      $("stop").classList.toggle("visible", active);
+      $("engine").disabled = active;
+    }
+
+    async function submitMessage(text) {
+      const history = messages.map(({role, content}) => ({role, content}));
+      messages.push({role: "user", content: text});
+      const answer = {role: "assistant", content: "", engine: $("engine").selectedOptions[0].text};
+      messages.push(answer);
+      render();
+      setGenerating(true);
+      controller = new AbortController();
+
+      try {
+        const response = await fetch(`/ui/chat/completions?engine=${encodeURIComponent($("engine").value)}`, {
+          method: "POST",
+          signal: controller.signal,
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${$("api-key").value}`,
+          },
+          body: JSON.stringify({
+            model,
+            messages: [...history, {role: "user", content: text}],
+            stream: true,
+            max_tokens: 256,
+            temperature: 0.7,
+            top_p: 0.8,
+          }),
+        });
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({}));
+          throw new Error(body.error?.message || `HTTP ${response.status}`);
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        while (true) {
+          const {value, done} = await reader.read();
+          buffer += decoder.decode(value || new Uint8Array(), {stream: !done});
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+          for (const line of lines) {
+            if (!line.startsWith("data:")) continue;
+            const data = line.slice(5).trim();
+            if (!data || data === "[DONE]") continue;
+            const event = JSON.parse(data);
+            if (event.error) throw new Error(event.error.message);
+            answer.content += event.choices?.[0]?.delta?.content || "";
+            render();
+          }
+          if (done) break;
+        }
+      } catch (error) {
+        if (error.name === "AbortError") answer.content ||= "생성이 중지되었습니다.";
+        else answer.content = `오류: ${error.message}`;
+        render();
+      } finally {
+        controller = null;
+        setGenerating(false);
+        $("prompt").focus();
+      }
+    }
+
+    $("composer").addEventListener("submit", (event) => {
+      event.preventDefault();
+      const text = $("prompt").value.trim();
+      if (!text || controller) return;
+      $("prompt").value = "";
+      $("prompt").style.height = "auto";
+      submitMessage(text);
+    });
+    $("prompt").addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        $("composer").requestSubmit();
+      }
+    });
+    $("prompt").addEventListener("input", (event) => {
+      event.target.style.height = "auto";
+      event.target.style.height = `${Math.min(event.target.scrollHeight, 180)}px`;
+    });
+    $("new-chat").addEventListener("click", () => { messages.length = 0; render(); });
+    $("stop").addEventListener("click", () => controller?.abort());
+    $("engine").addEventListener("change", updateStatus);
+    $("api-key").addEventListener("change", loadStatus);
+    loadStatus();
+  </script>
+</body>
+</html>

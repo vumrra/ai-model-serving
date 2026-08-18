@@ -46,6 +46,7 @@ class Settings:
     max_completion_tokens: int = 512
     rate_limit_requests: int = 5
     rate_limit_window_seconds: int = 60
+    chat_ui_enabled: bool = False
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -89,4 +90,5 @@ class Settings:
             rate_limit_window_seconds=_env_int(
                 "RATE_LIMIT_WINDOW_SECONDS", defaults.rate_limit_window_seconds
             ),
+            chat_ui_enabled=os.getenv("CHAT_UI_ENABLED", "").lower() in {"1", "true", "yes"},
         )

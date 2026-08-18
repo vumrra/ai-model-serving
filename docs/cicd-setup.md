@@ -42,7 +42,7 @@ Pod 생성 API에는 값 대신 `{{ RUNPOD_SECRET_qwen_engine_api_key }}` 참조
 | `PROMOTION_MAX_TTFT_MS` | candidate p95 TTFT 상한 |
 | `PROMOTION_MAX_E2E_MS` | candidate p95 전체 지연 상한 |
 
-## 실행 순서
+## 현재 구현된 실행 순서
 
 1. `ci`: 코드 품질과 계약 테스트
 2. `build-images`: runtime·Gateway image 빌드와 release manifest 생성
@@ -52,3 +52,20 @@ Pod 생성 API에는 값 대신 `{{ RUNPOD_SECRET_qwen_engine_api_key }}` 참조
 6. `rollback`: 이전 digest와 model revision으로 engine부터 재생성
 
 RunPod Pod에는 TTL이 이름에 기록되고 scheduled cleanup이 30분마다 만료 Pod를 제거합니다.
+
+## 목표 Kubernetes GitOps 순서
+
+현재 RunPod·Cloud Run workflow는 GPU 이미지와 API 계약을 검증하는 기준 경로로 유지합니다.
+KServe 단계에서는 다음 흐름을 추가합니다.
+
+1. CI가 vLLM·SGLang image를 digest로 빌드하고 검증
+2. 승인된 digest로 Helm staging values 변경
+3. Argo CD가 Kubernetes cluster에 동기화
+4. KServe가 `ServingRuntime`과 `InferenceService` 배포
+5. staging API smoke와 benchmark 실행
+6. production values에 같은 digest 승격
+7. 장애 시 이전 Git revision과 image digest로 rollback
+
+API key, Hugging Face token과 registry credential은 Git에 넣지 않고 External Secrets를 통해
+cloud secret manager에서 동기화합니다. KServe와 Knative 선택 기준은
+[Kubernetes 모델 서빙 가이드](kubernetes-serving.md)를 참고합니다.
