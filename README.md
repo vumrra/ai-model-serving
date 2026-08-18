@@ -283,6 +283,8 @@ releases/      immutable release manifest schema
 [docs/cicd-setup.md](docs/cicd-setup.md)에 정리했습니다.
 Kubernetes·KServe·Argo CD·Knative의 역할과 선택 기준은
 [docs/kubernetes-serving.md](docs/kubernetes-serving.md)를 참고합니다.
+현재 로컬 Kind·KServe·MLX-LM의 구조와 실행 흐름은
+[docs/local-kind-kserve-mlx.md](docs/local-kind-kserve-mlx.md)에 자세히 정리했습니다.
 모델·양자화·thinking과 생성·엔진 옵션은
 [docs/model-and-inference-options.md](docs/model-and-inference-options.md)에 정리했습니다.
 
