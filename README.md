@@ -20,7 +20,7 @@ Qwen 모델을 API로 제공하고, Transformers·vLLM·SGLang을 같은 조건�
 | 1일 | 완료 | Mock Engine과 Gateway 수직 슬라이스 | FastAPI, 요청/응답, async |
 | 2일 | 완료 | Transformers CPU smoke와 계약 테스트 | tokenizer, generation, 테스트 |
 | 3일 | 완료 | llama.cpp·MLX-LM 로컬 실행 | 양자화, GGUF, Metal |
-| 4일 | 예정 | vLLM·SGLang GPU 이미지와 L40S smoke | CUDA, 엔진 실행 옵션 |
+| 4일 | 로컬 완료 | vLLM·SGLang GPU 이미지와 L40S smoke | CUDA, 엔진 실행 옵션 |
 | 5일 | 예정 | GPU Kubernetes와 KServe Standard Mode | GPU scheduling, CRD |
 | 6일 | 예정 | 두 `ServingRuntime`·`InferenceService` 배포 | 선언형 모델 서빙, readiness |
 | 7일 | 예정 | 동일 조건 엔진 비교 | TTFT, TPOT, p95, throughput, GPU 메모리 |
@@ -31,6 +31,30 @@ Qwen 모델을 API로 제공하고, Transformers·vLLM·SGLang을 같은 조건�
 scale-to-zero와 revision 기반 트래픽 관리가 필요할 때만 선택합니다. 상세한 도구 역할과
 선택 기준은 [Kubernetes 모델 서빙 가이드](docs/kubernetes-serving.md)에 정리했습니다.
 [최종 아키텍처 HTML](docs/ai-serving-architecture.html)에서는 API와 CI/CD 흐름을 함께 볼 수 있습니다.
+
+4일차 코드는 완료됐으며 실제 L40S smoke만 RunPod 인스턴스를 할당한 뒤 실행합니다.
+현재 GitHub Actions는 역할이 겹치지 않는 세 workflow만 둡니다.
+
+| Workflow | 실행 시점 | 역할 |
+| --- | --- | --- |
+| `ci` | push, pull request | lint, typecheck, test, Gateway image build |
+| `gpu-runtime` | 수동 실행 | 선택한 엔진 image build, L40S JSON·SSE smoke, Pod 삭제 |
+| `cleanup-runpod` | 30분마다 | 중단된 workflow가 남긴 만료 Pod 삭제 |
+
+로컬에서는 클라우드 자원을 만들지 않고 구조와 테스트만 검증합니다.
+
+```bash
+task gpu-verify
+```
+
+Task가 없다면 최소 구조 검증을 직접 실행합니다.
+
+```bash
+uv run python scripts/verify_gpu_workflow.py
+```
+
+실제 실행에 필요한 secret과 `gpu-runtime` 입력값은
+[CI/CD 연결 체크리스트](docs/cicd-setup.md)에 정리했습니다.
 
 ## 빠른 시작
 

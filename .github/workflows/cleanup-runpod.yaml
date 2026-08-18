@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: qwen-runpod-cleanup
+  cancel-in-progress: false
+
 jobs:
   cleanup:
     runs-on: ubuntu-latest
@@ -16,7 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
-      - run: uv sync --dev
+      - run: uv sync --frozen --dev
       - run: uv run python deploy/runpod/cleanup_expired.py --apply
         env:
           RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}

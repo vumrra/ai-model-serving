@@ -1,0 +1,123 @@
+name: gpu-runtime
+
+on:
+  workflow_dispatch:
+    inputs:
+      engine:
+        description: Runtime engine to build and smoke
+        type: choice
+        options: [vllm, sglang]
+        required: true
+      base_image:
+        description: Upstream engine image as tag@sha256 digest
+        type: string
+        required: true
+      engine_version:
+        description: Engine version included in the upstream image
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: qwen-gpu-runtime
+  cancel-in-progress: false
+
+jobs:
+  runtime:
+    runs-on: ubuntu-latest
+    environment: gpu-staging
+    timeout-minutes: 90
+    env:
+      RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+      RUNPOD_REGISTRY_AUTH_ID: ${{ secrets.RUNPOD_REGISTRY_AUTH_ID }}
+      RUNPOD_ENGINE_SECRET_NAME: ${{ vars.RUNPOD_ENGINE_SECRET_NAME || 'qwen_engine_api_key' }}
+      ENGINE_API_KEY: ${{ secrets.ENGINE_API_KEY }}
+      MODEL_ID: Qwen/Qwen3-4B
+      MODEL_REVISION: 1cfa9a7208912126459214e8b04321603b3df60c
+      MODEL_DTYPE: bfloat16
+      MAX_MODEL_LEN: "8192"
+      TENSOR_PARALLEL_SIZE: "1"
+      GPU_MEMORY_UTILIZATION: "0.90"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify repository configuration
+        run: |
+          uv sync --frozen --dev
+          uv run python scripts/verify_gpu_workflow.py
+      - name: Resolve engine image repository
+        id: metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          echo "repository=ghcr.io/${owner}/qwen-${{ inputs.engine }}" >> "$GITHUB_OUTPUT"
+      - name: Build immutable runtime image
+        id: runtime-image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: engines/${{ inputs.engine }}/Dockerfile
+          build-args: BASE_IMAGE=${{ inputs.base_image }}
+          push: true
+          tags: ${{ steps.metadata.outputs.repository }}:${{ github.sha }}
+          provenance: true
+          sbom: true
+      - name: Create L40S smoke Pod
+        shell: bash
+        run: |
+          set -euo pipefail
+          runtime_image="${{ steps.metadata.outputs.repository }}@${{ steps.runtime-image.outputs.digest }}"
+          echo "RUN_IMAGE_DIGEST=${runtime_image}" >> "$GITHUB_ENV"
+          uv run python deploy/runpod/create_pod.py \
+            --image "${runtime_image}" \
+            --release-id "${GITHUB_SHA::12}-${{ inputs.engine }}" \
+            --gpu "NVIDIA L40S" \
+            --purpose benchmark \
+            --ttl-minutes 45 \
+            --max-hourly-cost "${{ vars.RUNPOD_MAX_HOURLY_RATE || '1.25' }}" \
+            --max-job-cost "${{ vars.RUNPOD_JOB_BUDGET || '5.00' }}" \
+            --output pod.json
+      - name: Wait for model readiness
+        run: uv run python deploy/runpod/wait_ready.py --pod-file pod.json --api-key "$ENGINE_API_KEY"
+      - name: Resolve engine endpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          engine_base_url="$(uv run python -c 'import json; print(json.load(open("pod.json"))["proxyUrl"])')"
+          echo "ENGINE_BASE_URL=${engine_base_url}" >> "$GITHUB_ENV"
+      - name: Run JSON and SSE smoke
+        run: |
+          uv run python -m benchmarks.runner \
+            --endpoint "$ENGINE_BASE_URL/v1/chat/completions" \
+            --workload benchmarks/workloads/smoke.yaml \
+            --engine "${{ inputs.engine }}" \
+            --model "$MODEL_ID" \
+            --model-revision "$MODEL_REVISION" \
+            --api-key-env ENGINE_API_KEY \
+            --label "engine_version=${{ inputs.engine_version }}" \
+            --output artifacts/gpu-smoke.json
+      - name: Upload smoke evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gpu-smoke-${{ inputs.engine }}-${{ github.run_id }}
+          path: |
+            artifacts/gpu-smoke.json
+            pod.json
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Always terminate Pod
+        if: always()
+        run: test ! -f pod.json || uv run python deploy/runpod/delete_pod.py --pod-file pod.json

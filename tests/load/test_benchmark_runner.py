@@ -1,11 +1,28 @@
 import asyncio
+from pathlib import Path
 
 import httpx
 import pytest
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
 
-from benchmarks.runner import RequestCase, run_case
+from benchmarks.runner import (
+    RequestCase,
+    collect_environment,
+    expand_cases,
+    load_workload,
+    run_case,
+)
+
+
+def test_gpu_smoke_covers_json_and_sse(monkeypatch: pytest.MonkeyPatch) -> None:
+    workload = load_workload(Path("benchmarks/workloads/smoke.yaml"), "Qwen/Qwen3-4B")
+    cases = expand_cases(workload)
+    monkeypatch.setenv("RUN_IMAGE_DIGEST", "ghcr.io/acme/qwen-vllm@sha256:" + "a" * 64)
+
+    assert [case.payload["stream"] for case in cases] == [False, True]
+    assert all(case.payload["model"] == "Qwen/Qwen3-4B" for case in cases)
+    assert collect_environment([])["run_image_digest"].endswith("a" * 64)
 
 
 @pytest.mark.asyncio

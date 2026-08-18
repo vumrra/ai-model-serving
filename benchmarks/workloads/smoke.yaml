@@ -2,7 +2,7 @@ schema_version: 1
 name: qwen-smoke
 defaults:
   model: Qwen/Qwen3-0.6B
-  stream: true
+  stream: false
   temperature: 0.0
   top_p: 1.0
   max_tokens: 16
@@ -14,9 +14,17 @@ execution:
   concurrency: 1
   timeout_seconds: 90
 prompts:
-  - id: arithmetic
+  - id: json-arithmetic
     messages:
       - role: system
         content: Answer briefly.
       - role: user
         content: What is 12 plus 30?
+  - id: sse-arithmetic
+    parameters:
+      stream: true
+    messages:
+      - role: system
+        content: Answer briefly.
+      - role: user
+        content: What is 18 plus 24?

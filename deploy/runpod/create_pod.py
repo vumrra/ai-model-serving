@@ -11,6 +11,7 @@ from deploy.runpod.client import RunPodClient
 
 _SAFE_NAME = re.compile(r"^[A-Za-z0-9._-]{1,80}$")
 _SAFE_SECRET_NAME = re.compile(r"^[A-Za-z0-9_-]{1,80}$")
+_IMMUTABLE_IMAGE = re.compile(r"^[^\s@]+@sha256:[0-9a-f]{64}$")
 
 
 def parse_args() -> argparse.Namespace:
@@ -31,6 +32,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def build_payload(args: argparse.Namespace) -> dict[str, object]:
+    validate_runtime_image(args.image)
     if not 1 <= args.ttl_minutes <= 240:
         raise ValueError("ttl-minutes는 1 이상 240 이하여야 합니다.")
     if not _SAFE_NAME.fullmatch(args.release_id):
@@ -67,6 +69,11 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
     if registry_auth_id := os.getenv("RUNPOD_REGISTRY_AUTH_ID"):
         payload["containerRegistryAuthId"] = registry_auth_id
     return payload
+
+
+def validate_runtime_image(image: str) -> None:
+    if not _IMMUTABLE_IMAGE.fullmatch(image):
+        raise ValueError("image must include an immutable lowercase sha256 digest")
 
 
 def sanitize_pod(pod: dict[str, object], payload: dict[str, object]) -> dict[str, object]:

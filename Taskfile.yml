@@ -46,6 +46,12 @@ tasks:
     cmds:
       - env CHAT_UI_ENABLED=true PUBLIC_API_KEY=local-public-key MODEL_ALIAS=qwen-demo RATE_LIMIT_REQUESTS=100 uv run uvicorn apps.gateway.main:app --host 127.0.0.1 --port 8000
 
+  gpu-verify:
+    desc: RunPod을 생성하지 않고 4일차 GPU workflow와 smoke 구성을 검증합니다.
+    cmds:
+      - uv run python scripts/verify_gpu_workflow.py
+      - uv run pytest tests/unit/test_runpod_payload.py tests/unit/test_runpod_readiness.py tests/unit/test_gpu_workflow.py tests/load/test_benchmark_runner.py tests/load/test_benchmark_summary.py
+
   test:
     desc: 전체 자동 테스트를 실행합니다.
     cmds:
