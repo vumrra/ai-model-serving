@@ -108,7 +108,7 @@ def test_mlx_command_downloads_pinned_snapshot_and_uses_native_server(tmp_path: 
         "--port",
         "8004",
         "--chat-template-args",
-        '{"enable_thinking": false}',
+        '{"enable_thinking": true}',
     ]
 
 

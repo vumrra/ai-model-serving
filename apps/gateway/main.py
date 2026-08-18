@@ -237,7 +237,7 @@ def create_app(
     ) -> Any:
         upstream_payload = payload.model_dump()
         upstream_payload["model"] = upstream.settings.upstream_model_name
-        upstream_payload["chat_template_kwargs"] = {"enable_thinking": False}
+        upstream_payload["chat_template_kwargs"] = {"enable_thinking": True}
         request_id = _request_id(request)
         application.state.metrics.active.inc()
 

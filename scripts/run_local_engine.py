@@ -86,7 +86,7 @@ def resolve_engine_command(
             "--port",
             str(port),
             "--chat-template-args",
-            json.dumps({"enable_thinking": False}),
+            json.dumps({"enable_thinking": True}),
         ]
 
     raise ValueError(f"unsupported engine: {engine}")
