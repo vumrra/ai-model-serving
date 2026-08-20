@@ -45,12 +45,13 @@ def test_local_vllm_chart_uses_pinned_arm64_cpu_image() -> None:
     container = runtime["spec"]["containers"][0]  # type: ignore[index]
     assert container["image"].startswith("docker.io/vllm/vllm-openai-cpu:v0.27.1-arm64@sha256:")
     assert container["args"][:3] == [
-        "Qwen/Qwen3-4B",
+        "Qwen/Qwen3-1.7B",
         "--revision",
-        "1cfa9a7208912126459214e8b04321603b3df60c",
+        "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
     ]
     assert "bfloat16" in container["args"]
-    assert container["resources"]["requests"] == {"cpu": "2", "memory": "10Gi"}
+    assert container["resources"]["requests"] == {"cpu": "2", "memory": "6Gi"}
+    assert container["resources"]["limits"] == {"cpu": "4", "memory": "10Gi"}
     assert "nvidia.com/gpu" not in container["resources"]["limits"]
     assert container["volumeMounts"] == [
         {"name": "dshm", "mountPath": "/dev/shm"},

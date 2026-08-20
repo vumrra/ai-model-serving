@@ -31,7 +31,7 @@ _CHAT_UI = Path(__file__).with_name("chat.html")
 _LOCAL_ENGINES = {
     "llama_cpp": ("llama.cpp", "http://127.0.0.1:8003", "qwen3-0.6b"),
     "mlx_lm": ("MLX-LM", "http://127.0.0.1:8004", "default_model"),
-    "kserve_vllm": ("KServe · vLLM CPU", "http://127.0.0.1:8005", "qwen3-4b"),
+    "kserve_vllm": ("KServe · vLLM CPU", "http://127.0.0.1:8005", "qwen3-1.7b"),
 }
 
 

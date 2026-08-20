@@ -8,11 +8,11 @@ runtime:
   shmSize: 1Gi
   startupProbeFailureThreshold: 540
   args:
-    - Qwen/Qwen3-4B
+    - Qwen/Qwen3-1.7B
     - --revision
-    - 1cfa9a7208912126459214e8b04321603b3df60c
+    - 70d244cc86ccca08cf5af4e1e306ecf908b1ad5e
     - --served-model-name
-    - qwen3-4b
+    - qwen3-1.7b
     - --dtype
     - bfloat16
     - --max-model-len
@@ -29,9 +29,9 @@ cache:
 
 model:
   format: huggingface
-  id: Qwen/Qwen3-4B
-  revision: 1cfa9a7208912126459214e8b04321603b3df60c
-  alias: qwen3-4b
+  id: Qwen/Qwen3-1.7B
+  revision: 70d244cc86ccca08cf5af4e1e306ecf908b1ad5e
+  alias: qwen3-1.7b
   enableThinking: false
 
 predictor:
@@ -41,7 +41,7 @@ predictor:
 resources:
   requests:
     cpu: "2"
-    memory: 10Gi
+    memory: 6Gi
   limits:
     cpu: "4"
-    memory: 14Gi
+    memory: 10Gi

@@ -97,7 +97,7 @@ def test_chat_ui_streams_from_selected_engine(
     assert response.headers["content-type"].startswith("text/event-stream")
     assert "선택된 엔진의 응답" in content
     assert content.endswith("data: [DONE]\n\n")
-    assert engine_requests == [(8005, "qwen3-4b")]
+    assert engine_requests == [(8005, "qwen3-1.7b")]
 
 
 def test_chat_ui_rejects_unknown_engine(client: TestClient):

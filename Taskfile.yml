@@ -63,11 +63,12 @@ tasks:
       - kind load docker-image qwen-mlx-cpu:local --name qwen-serving
 
   kserve-deploy:
-    desc: Qwen3-4B BF16 vLLM ARM64 CPU InferenceService를 배포합니다.
+    desc: Qwen3-1.7B BF16 vLLM ARM64 CPU InferenceService를 배포합니다.
     cmds:
       - helm upgrade --install qwen-vllm-cpu charts/qwen-serving --namespace qwen-serving --create-namespace --values charts/qwen-serving/values-local-vllm-cpu.yaml
-      - kubectl --namespace qwen-serving wait --for=condition=Ready inferenceservice/qwen-vllm-cpu --timeout=60m
+      - kubectl --namespace qwen-serving wait --for=jsonpath='{.spec.template.spec.containers[0].args[0]}'=Qwen/Qwen3-1.7B deployment/qwen-vllm-cpu-predictor --timeout=10m
       - kubectl --namespace qwen-serving rollout status deployment/qwen-vllm-cpu-predictor --timeout=60m
+      - kubectl --namespace qwen-serving wait --for=condition=Ready inferenceservice/qwen-vllm-cpu --timeout=60m
 
   kserve-forward:
     desc: Gateway가 KServe의 vLLM을 사용하도록 8005 포트를 연결합니다.
@@ -82,7 +83,7 @@ tasks:
   kserve-gateway:
     desc: Open WebUI와 KServe vLLM 사이의 Gateway를 8000 포트에서 실행합니다.
     cmds:
-      - env CHAT_UI_ENABLED=false PUBLIC_API_KEY=local-public-key ENGINE_API_KEY= ENGINE_BASE_URL=http://127.0.0.1:8005 ENGINE_MODEL_NAME=qwen3-4b MODEL_ALIAS=qwen-demo ENABLE_THINKING=false RATE_LIMIT_REQUESTS=100 UPSTREAM_TIMEOUT_SECONDS=600 uv run uvicorn apps.gateway.main:app --host 127.0.0.1 --port 8000
+      - env CHAT_UI_ENABLED=false PUBLIC_API_KEY=local-public-key ENGINE_API_KEY= ENGINE_BASE_URL=http://127.0.0.1:8005 ENGINE_MODEL_NAME=qwen3-1.7b MODEL_ALIAS=qwen-demo ENABLE_THINKING=false RATE_LIMIT_REQUESTS=100 UPSTREAM_TIMEOUT_SECONDS=600 uv run uvicorn apps.gateway.main:app --host 127.0.0.1 --port 8000
 
   open-webui-up:
     desc: 대화 기록을 저장하는 Open WebUI를 3000 포트에서 실행합니다.

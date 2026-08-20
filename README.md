@@ -5,7 +5,7 @@ Qwen 모델을 API로 제공하고, Transformers·vLLM·SGLang을 같은 조건�
 현재 로컬 수직 슬라이스는 GPU 없이 Apple Silicon에서 실행됩니다.
 
 ```text
-Open WebUI → FastAPI Gateway → Kind/KServe → vLLM ARM64 CPU → Qwen3-4B BF16
+Open WebUI → FastAPI Gateway → Kind/KServe → vLLM ARM64 CPU → Qwen3-1.7B BF16
 ```
 
 이후 Mock Engine만 Qwen/vLLM/SGLang으로 교체하며 외부 API 계약은 유지합니다.
@@ -259,10 +259,10 @@ uv run uvicorn apps.gateway.main:app --port 8000
 ## Kind + KServe + vLLM ARM64 CPU + Open WebUI
 
 Apple Silicon Mac의 Docker 안에 Kind cluster를 만들고, KServe Standard Mode에서
-`Qwen/Qwen3-4B`를 BF16으로 vLLM의 Linux ARM64 CPU image에서 실행합니다. CUDA는 NVIDIA
-GPU용 병렬 컴퓨팅 플랫폼이라 이 경로에서는 사용하지 않습니다. Qwen3에는 0.6B와 4B 사이에
-1.7B도 있지만 이 실습은 4B를 사용합니다. Docker Desktop에는 CPU 4개와 메모리 16GB 이상을
-할당해야 합니다.
+`Qwen/Qwen3-1.7B`를 BF16으로 vLLM의 Linux ARM64 CPU image에서 실행합니다. CUDA는 NVIDIA
+GPU용 병렬 컴퓨팅 플랫폼이라 이 경로에서는 사용하지 않습니다. 4B보다 답변 품질은
+낮을 수 있지만 CPU 실습에서 시작과 추론 대기 시간을 줄이기 위해 1.7B를 기본으로 사용합니다.
+Docker Desktop에는 CPU 4개와 메모리 12GB 이상을 할당하는 것을 권장합니다.
 
 ```bash
 brew install kind
