@@ -9,6 +9,14 @@ runtime:
   args: []
   env: {}
   shmSize: ""
+  startupProbeFailureThreshold: 180
+
+cache:
+  enabled: false
+  mountPath: /root/.cache/huggingface
+  size: 12Gi
+  accessMode: ReadWriteOnce
+  storageClassName: ""
 
 model:
   format: huggingface

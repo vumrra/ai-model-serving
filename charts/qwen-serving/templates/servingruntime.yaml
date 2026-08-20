@@ -13,12 +13,19 @@ spec:
     - v1
   storageHelper:
     disabled: true
-  {{- if .Values.runtime.shmSize }}
+  {{- if or .Values.runtime.shmSize .Values.cache.enabled }}
   volumes:
+    {{- if .Values.runtime.shmSize }}
     - name: dshm
       emptyDir:
         medium: Memory
         sizeLimit: {{ .Values.runtime.shmSize | quote }}
+    {{- end }}
+    {{- if .Values.cache.enabled }}
+    - name: model-cache
+      persistentVolumeClaim:
+        claimName: {{ .Values.name }}-model-cache
+    {{- end }}
   {{- end }}
   containers:
     - name: kserve-container
@@ -32,10 +39,16 @@ spec:
       args:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- if .Values.runtime.shmSize }}
+      {{- if or .Values.runtime.shmSize .Values.cache.enabled }}
       volumeMounts:
+        {{- if .Values.runtime.shmSize }}
         - name: dshm
           mountPath: /dev/shm
+        {{- end }}
+        {{- if .Values.cache.enabled }}
+        - name: model-cache
+          mountPath: {{ .Values.cache.mountPath }}
+        {{- end }}
       {{- end }}
       ports:
         - name: http1
@@ -59,7 +72,7 @@ spec:
           path: /v1/models
           port: {{ .Values.runtime.port }}
         periodSeconds: 10
-        failureThreshold: 180
+        failureThreshold: {{ .Values.runtime.startupProbeFailureThreshold }}
       readinessProbe:
         httpGet:
           path: /v1/models

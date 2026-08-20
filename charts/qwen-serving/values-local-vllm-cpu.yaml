@@ -6,6 +6,7 @@ runtime:
   imagePullPolicy: IfNotPresent
   port: 8000
   shmSize: 1Gi
+  startupProbeFailureThreshold: 540
   args:
     - Qwen/Qwen3-4B
     - --revision
@@ -20,6 +21,11 @@ runtime:
     - "1"
   env:
     VLLM_CPU_KVCACHE_SPACE: "1"
+
+cache:
+  enabled: true
+  size: 12Gi
+  storageClassName: standard
 
 model:
   format: huggingface

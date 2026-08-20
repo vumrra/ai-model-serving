@@ -40,6 +40,7 @@ def test_local_vllm_chart_uses_pinned_arm64_cpu_image() -> None:
     documents = render("values-local-vllm-cpu.yaml")
     runtime = next(item for item in documents if item["kind"] == "ServingRuntime")
     service = next(item for item in documents if item["kind"] == "InferenceService")
+    cache = next(item for item in documents if item["kind"] == "PersistentVolumeClaim")
 
     container = runtime["spec"]["containers"][0]  # type: ignore[index]
     assert container["image"].startswith("docker.io/vllm/vllm-openai-cpu:v0.27.1-arm64@sha256:")
@@ -51,10 +52,20 @@ def test_local_vllm_chart_uses_pinned_arm64_cpu_image() -> None:
     assert "bfloat16" in container["args"]
     assert container["resources"]["requests"] == {"cpu": "2", "memory": "10Gi"}
     assert "nvidia.com/gpu" not in container["resources"]["limits"]
-    assert container["volumeMounts"] == [{"name": "dshm", "mountPath": "/dev/shm"}]
-    assert runtime["spec"]["volumes"] == [
-        {"name": "dshm", "emptyDir": {"medium": "Memory", "sizeLimit": "1Gi"}}
+    assert container["volumeMounts"] == [
+        {"name": "dshm", "mountPath": "/dev/shm"},
+        {"name": "model-cache", "mountPath": "/root/.cache/huggingface"},
     ]
+    assert runtime["spec"]["volumes"] == [
+        {"name": "dshm", "emptyDir": {"medium": "Memory", "sizeLimit": "1Gi"}},
+        {
+            "name": "model-cache",
+            "persistentVolumeClaim": {"claimName": "qwen-vllm-cpu-model-cache"},
+        },
+    ]
+    assert container["startupProbe"]["failureThreshold"] == 540
+    assert cache["spec"]["storageClassName"] == "standard"
+    assert cache["spec"]["resources"]["requests"]["storage"] == "12Gi"
     assert service["metadata"]["annotations"]["serving.kserve.io/deploymentMode"] == "Standard"
     assert service["spec"]["predictor"]["deploymentStrategy"]["type"] == "Recreate"
     assert service["spec"]["predictor"]["model"]["runtime"] == "qwen-vllm-cpu"
@@ -83,7 +94,7 @@ def test_local_kserve_disables_ingress_and_waits_for_service_readiness() -> None
     taskfile = yaml.safe_load((ROOT / "Taskfile.yml").read_text(encoding="utf-8"))
     commands = taskfile["tasks"]["kserve-deploy"]["cmds"]
     assert "wait --for=condition=Ready inferenceservice/qwen-vllm-cpu" in commands[1]
-    assert "--timeout=45m" in commands[1]
+    assert "--timeout=60m" in commands[1]
     assert "rollout status deployment/qwen-vllm-cpu-predictor" in commands[2]
 
 

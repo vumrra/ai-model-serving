@@ -272,7 +272,8 @@ task kserve-deploy
 ```
 
 첫 배포는 vLLM image와 모델 다운로드 때문에 오래 걸릴 수 있습니다. vLLM의 프로세스 간
-통신을 위해 Pod의 `/dev/shm`에는 1GiB 메모리 volume을 연결합니다. 배포 상태는
+통신을 위해 Pod의 `/dev/shm`에는 1GiB 메모리 volume을 연결합니다. 12GiB PVC에 Hugging Face
+cache를 저장하므로 같은 Kind cluster 안에서는 Pod가 교체돼도 모델을 다시 받지 않습니다. 배포 상태는
 다음 명령으로 확인합니다.
 
 ```bash

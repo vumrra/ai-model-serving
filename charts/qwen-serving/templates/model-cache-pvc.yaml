@@ -1,0 +1,17 @@
+{{- if .Values.cache.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Values.name }}-model-cache
+  labels:
+    app.kubernetes.io/name: {{ .Chart.Name }}
+spec:
+  accessModes:
+    - {{ .Values.cache.accessMode }}
+  {{- with .Values.cache.storageClassName }}
+  storageClassName: {{ . }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.cache.size }}
+{{- end }}
