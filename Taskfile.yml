@@ -66,8 +66,8 @@ tasks:
     desc: Qwen3-4B BF16 vLLM ARM64 CPU InferenceService를 배포합니다.
     cmds:
       - helm upgrade --install qwen-vllm-cpu charts/qwen-serving --namespace qwen-serving --create-namespace --values charts/qwen-serving/values-local-vllm-cpu.yaml
-      - kubectl --namespace qwen-serving wait --for=condition=Ready inferenceservice/qwen-vllm-cpu --timeout=20m
-      - kubectl --namespace qwen-serving rollout status deployment/qwen-vllm-cpu-predictor --timeout=20m
+      - kubectl --namespace qwen-serving wait --for=condition=Ready inferenceservice/qwen-vllm-cpu --timeout=45m
+      - kubectl --namespace qwen-serving rollout status deployment/qwen-vllm-cpu-predictor --timeout=45m
 
   kserve-forward:
     desc: Gateway가 KServe의 vLLM을 사용하도록 8005 포트를 연결합니다.

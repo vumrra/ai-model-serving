@@ -8,6 +8,7 @@ runtime:
   command: []
   args: []
   env: {}
+  shmSize: ""
 
 model:
   format: huggingface

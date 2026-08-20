@@ -13,6 +13,13 @@ spec:
     - v1
   storageHelper:
     disabled: true
+  {{- if .Values.runtime.shmSize }}
+  volumes:
+    - name: dshm
+      emptyDir:
+        medium: Memory
+        sizeLimit: {{ .Values.runtime.shmSize | quote }}
+  {{- end }}
   containers:
     - name: kserve-container
       image: {{ required "runtime.image is required" .Values.runtime.image | quote }}
@@ -24,6 +31,11 @@ spec:
       {{- with .Values.runtime.args }}
       args:
         {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.runtime.shmSize }}
+      volumeMounts:
+        - name: dshm
+          mountPath: /dev/shm
       {{- end }}
       ports:
         - name: http1
