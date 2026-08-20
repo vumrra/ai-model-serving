@@ -1,3 +1,5 @@
 kserve:
   controller:
     deploymentMode: Standard
+    gateway:
+      disableIngressCreation: true

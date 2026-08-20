@@ -66,8 +66,8 @@ tasks:
     desc: Qwen3-4B-4bit MLX-LM InferenceService를 배포합니다.
     cmds:
       - helm upgrade --install qwen-mlx charts/qwen-serving --namespace qwen-serving --create-namespace --values charts/qwen-serving/values-local-mlx-cpu.yaml
-      - kubectl --namespace qwen-serving rollout status deployment/qwen-mlx-predictor --timeout=20m
       - kubectl --namespace qwen-serving wait --for=condition=Ready inferenceservice/qwen-mlx --timeout=20m
+      - kubectl --namespace qwen-serving rollout status deployment/qwen-mlx-predictor --timeout=20m
 
   kserve-forward:
     desc: Chat UI가 KServe의 MLX-LM을 사용하도록 8005 포트를 연결합니다.

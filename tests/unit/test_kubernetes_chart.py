@@ -47,3 +47,16 @@ def test_mlx_entrypoint_rejects_mutable_revision_before_download() -> None:
 
     assert result.returncode == 64
     assert "immutable 40-character" in result.stderr
+
+
+def test_local_kserve_disables_ingress_and_waits_for_service_readiness() -> None:
+    kserve_values = yaml.safe_load(
+        (ROOT / "deploy/kubernetes/kserve-values.yaml").read_text(encoding="utf-8")
+    )
+    gateway = kserve_values["kserve"]["controller"]["gateway"]
+    assert gateway["disableIngressCreation"] is True
+
+    taskfile = yaml.safe_load((ROOT / "Taskfile.yml").read_text(encoding="utf-8"))
+    commands = taskfile["tasks"]["kserve-deploy"]["cmds"]
+    assert "wait --for=condition=Ready inferenceservice/qwen-mlx" in commands[1]
+    assert "rollout status deployment/qwen-mlx-predictor" in commands[2]
