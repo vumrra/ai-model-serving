@@ -63,21 +63,51 @@ tasks:
       - kind load docker-image qwen-mlx-cpu:local --name qwen-serving
 
   kserve-deploy:
-    desc: Qwen3-4B-4bit MLX-LM InferenceService를 배포합니다.
+    desc: Qwen3-4B BF16 vLLM ARM64 CPU InferenceService를 배포합니다.
     cmds:
-      - helm upgrade --install qwen-mlx charts/qwen-serving --namespace qwen-serving --create-namespace --values charts/qwen-serving/values-local-mlx-cpu.yaml
-      - kubectl --namespace qwen-serving wait --for=condition=Ready inferenceservice/qwen-mlx --timeout=20m
-      - kubectl --namespace qwen-serving rollout status deployment/qwen-mlx-predictor --timeout=20m
+      - helm upgrade --install qwen-vllm-cpu charts/qwen-serving --namespace qwen-serving --create-namespace --values charts/qwen-serving/values-local-vllm-cpu.yaml
+      - kubectl --namespace qwen-serving wait --for=condition=Ready inferenceservice/qwen-vllm-cpu --timeout=20m
+      - kubectl --namespace qwen-serving rollout status deployment/qwen-vllm-cpu-predictor --timeout=20m
 
   kserve-forward:
-    desc: Chat UI가 KServe의 MLX-LM을 사용하도록 8005 포트를 연결합니다.
+    desc: Gateway가 KServe의 vLLM을 사용하도록 8005 포트를 연결합니다.
     cmds:
-      - kubectl --namespace qwen-serving port-forward service/qwen-mlx-predictor 8005:80
+      - kubectl --namespace qwen-serving port-forward service/qwen-vllm-cpu-predictor 8005:80
+
+  kserve-status:
+    desc: KServe 모델의 준비 상태와 Pod를 확인합니다.
+    cmds:
+      - kubectl --namespace qwen-serving get inferenceservice,servingruntime,deployment,pod,service
+
+  kserve-gateway:
+    desc: Open WebUI와 KServe vLLM 사이의 Gateway를 8000 포트에서 실행합니다.
+    cmds:
+      - env CHAT_UI_ENABLED=false PUBLIC_API_KEY=local-public-key ENGINE_API_KEY= ENGINE_BASE_URL=http://127.0.0.1:8005 ENGINE_MODEL_NAME=qwen3-4b MODEL_ALIAS=qwen-demo ENABLE_THINKING=false RATE_LIMIT_REQUESTS=100 UPSTREAM_TIMEOUT_SECONDS=600 uv run uvicorn apps.gateway.main:app --host 127.0.0.1 --port 8000
+
+  open-webui-up:
+    desc: 대화 기록을 저장하는 Open WebUI를 3000 포트에서 실행합니다.
+    cmds:
+      - docker compose --file deploy/local/compose.open-webui.yaml up --detach
+
+  open-webui-down:
+    desc: Open WebUI를 중지합니다. 대화 기록 volume은 유지합니다.
+    cmds:
+      - docker compose --file deploy/local/compose.open-webui.yaml down
+
+  open-webui-logs:
+    desc: Open WebUI 로그를 확인합니다.
+    cmds:
+      - docker compose --file deploy/local/compose.open-webui.yaml logs --follow open-webui
+
+  open-webui-status:
+    desc: Open WebUI container 상태를 확인합니다.
+    cmds:
+      - docker compose --file deploy/local/compose.open-webui.yaml ps
 
   kserve-verify:
-    desc: cluster 없이 Helm chart와 MLX entrypoint를 검증합니다.
+    desc: cluster 없이 vLLM CPU Helm chart를 검증합니다.
     cmds:
-      - helm lint charts/qwen-serving --values charts/qwen-serving/values-local-mlx-cpu.yaml
+      - helm lint charts/qwen-serving --values charts/qwen-serving/values-local-vllm-cpu.yaml
       - env UV_CACHE_DIR=/private/tmp/qwen-serving-uv-cache uv run pytest tests/unit/test_kubernetes_chart.py
 
   kind-down:

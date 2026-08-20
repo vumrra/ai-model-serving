@@ -1,0 +1,21 @@
+services:
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:v0.11.0@sha256:72c0ba641ba75e7aa52655cb242570906ececd09b1140fb736483038a22b3228
+    container_name: qwen-open-webui
+    ports:
+      - "3000:8080"
+    environment:
+      ENABLE_OPENAI_API: "True"
+      OPENAI_API_BASE_URL: http://host.docker.internal:8000/v1
+      OPENAI_API_KEY: ${PUBLIC_API_KEY:-local-public-key}
+      WEBUI_AUTH: "False"
+      WEBUI_SECRET_KEY: ${OPEN_WEBUI_SECRET_KEY:-qwen-serving-local-secret}
+      ENABLE_VERSION_UPDATE_CHECK: "False"
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    volumes:
+      - qwen-open-webui-data:/app/backend/data
+    restart: unless-stopped
+
+volumes:
+  qwen-open-webui-data:

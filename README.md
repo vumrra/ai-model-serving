@@ -2,10 +2,10 @@
 
 Qwen 모델을 API로 제공하고, Transformers·vLLM·SGLang을 같은 조건에서 비교한 뒤 실제 배포와 롤백까지 경험하는 프로젝트입니다.
 
-현재 첫 번째 수직 슬라이스는 GPU 없이 실행됩니다.
+현재 로컬 수직 슬라이스는 GPU 없이 Apple Silicon에서 실행됩니다.
 
 ```text
-사용자 요청 → FastAPI Gateway → Mock Engine → JSON 또는 SSE 답변
+Open WebUI → FastAPI Gateway → Kind/KServe → vLLM ARM64 CPU → Qwen3-4B BF16
 ```
 
 이후 Mock Engine만 Qwen/vLLM/SGLang으로 교체하며 외부 API 계약은 유지합니다.
@@ -21,8 +21,8 @@ Qwen 모델을 API로 제공하고, Transformers·vLLM·SGLang을 같은 조건�
 | 2일 | 완료 | Transformers CPU smoke와 계약 테스트 | tokenizer, generation, 테스트 |
 | 3일 | 완료 | llama.cpp·MLX-LM 로컬 실행 | 양자화, GGUF, Metal |
 | 4일 | 로컬 완료 | vLLM·SGLang GPU 이미지와 L40S smoke | CUDA, 엔진 실행 옵션 |
-| 5일 | 로컬 구현 | Kind와 KServe Standard Mode | Kubernetes, CRD, Helm |
-| 6일 | 일부 구현 | MLX CPU `ServingRuntime`·`InferenceService` | 선언형 모델 서빙, readiness |
+| 5일 | 완료 | Kind와 KServe Standard Mode | Kubernetes, CRD, Helm |
+| 6일 | 완료 | vLLM ARM64 CPU `ServingRuntime`·Open WebUI | 선언형 모델 서빙, 대화 관리 |
 | 7일 | 예정 | 동일 조건 엔진 비교 | TTFT, TPOT, p95, throughput, GPU 메모리 |
 | 8일 | 예정 | Argo CD GitOps와 관측성 | image digest, Helm, Prometheus, Grafana |
 | 9일 | 예정 | 확장·canary·rollback·장애/비용 실험 | KEDA, Knative 선택, 운영 판단 |
@@ -218,7 +218,7 @@ uv run --group mlx-local python -m scripts.run_local_engine mlx_lm
     }'
 ```
 
-### 로컬 Chat UI
+### 간단한 내장 Chat UI
 
 실행할 엔진 하나 또는 둘을 먼저 켜고 UI Gateway를 실행합니다.
 
@@ -256,44 +256,67 @@ uv run uvicorn apps.gateway.main:app --port 8000
 `role`은 채팅 템플릿에서 발화자를 구분합니다. `system`은 행동 지침, `user`는 사용자
 입력, `assistant`는 이전 모델 답변입니다.
 
-## Kind + KServe + MLX-LM
+## Kind + KServe + vLLM ARM64 CPU + Open WebUI
 
 Apple Silicon Mac의 Docker 안에 Kind cluster를 만들고, KServe Standard Mode에서
-`mlx-community/Qwen3-4B-4bit`을 Linux CPU로 실행합니다. Docker Desktop에 CPU 4개와
-메모리 10GB 이상을 할당하는 것을 권장합니다.
+`Qwen/Qwen3-4B`를 BF16으로 vLLM의 Linux ARM64 CPU image에서 실행합니다. CUDA는 NVIDIA
+GPU용 병렬 컴퓨팅 플랫폼이라 이 경로에서는 사용하지 않습니다. Qwen3에는 0.6B와 4B 사이에
+1.7B도 있지만 이 실습은 4B를 사용합니다. Docker Desktop에는 CPU 4개와 메모리 16GB 이상을
+할당해야 합니다.
 
 ```bash
 brew install kind
 task kind-up
 task kserve-install
-task mlx-kind-image
 task kserve-deploy
 ```
 
-첫 배포는 image 설치와 약 2.5GB 모델 다운로드 때문에 오래 걸릴 수 있습니다. 배포 상태는
+첫 배포는 vLLM image와 모델 다운로드 때문에 오래 걸릴 수 있습니다. 배포 상태는
 다음 명령으로 확인합니다.
 
 ```bash
 kubectl -n qwen-serving get inferenceservice,pod
-kubectl -n qwen-serving logs -f deployment/qwen-mlx-predictor
+kubectl -n qwen-serving describe inferenceservice qwen-vllm-cpu
+kubectl -n qwen-serving logs -f deployment/qwen-vllm-cpu-predictor
+# 요약 상태만 볼 때
+task kserve-status
 ```
 
-KServe 서비스를 전용 포트 8005로 연결한 다음 UI를 실행합니다. 네이티브 MLX-LM의 8004와
-겹치지 않으므로 한 화면에서 둘을 비교할 수 있습니다.
+배포가 Ready가 되면 세 터미널에서 아래 명령을 실행합니다.
 
 ```bash
-# 터미널 1
+# 터미널 1: KServe를 localhost:8005에 연결
 task kserve-forward
 
-# 터미널 2
-task chat-ui
+# 터미널 2: 인증과 모델명 변환을 담당하는 Gateway
+task kserve-gateway
+
+# 터미널 3: 대화형 UI
+task open-webui-up
 ```
 
-브라우저에서 `http://127.0.0.1:8000`을 열고 `KServe · MLX-LM`을 선택합니다. 흐름은
-`Chat UI → Gateway → localhost:8005 → port-forward → KServe → MLX-LM`입니다.
+브라우저에서 [http://127.0.0.1:3000](http://127.0.0.1:3000)을 엽니다. 기본 모델은
+`qwen-demo`이며 흐름은 `Open WebUI → Gateway:8000 → port-forward:8005 → KServe → vLLM`입니다.
+Open WebUI의 대화와 설정은 Docker volume에 남으므로 `task open-webui-down` 후에도 유지됩니다.
+상태는 `task open-webui-status`, 로그는 `task open-webui-logs`로 확인합니다.
+
+API만 직접 검사하려면 다음 요청을 보냅니다.
+
+```bash
+curl -N http://127.0.0.1:8000/v1/chat/completions \
+  -H 'Authorization: Bearer local-public-key' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "model": "qwen-demo",
+    "messages": [{"role": "user", "content": "서울을 한 문장으로 설명해줘"}],
+    "max_tokens": 64,
+    "stream": true
+  }'
+```
+
 cluster 없이 chart만 검사하려면 `task kserve-verify`, 실습이 끝났으면 `task kind-down`을
-실행합니다. Linux CPU의 4B 추론은 첫 token에 수분이 걸릴 수 있어 UI Gateway timeout은
-이 로컬 실습에서 10분으로 설정합니다. 실제 성능 실험은 GPU의 vLLM·SGLang에서 진행합니다.
+실행합니다. 이 CPU 경로는 배포 구조와 API 동작을 학습하기 위한 것이며 성능 비교는 NVIDIA
+GPU의 vLLM·SGLang에서 진행합니다. 기존 MLX 설정은 엔진 비교용으로 저장되어 있습니다.
 
 ## Python 학습 방법
 
@@ -324,8 +347,8 @@ releases/      immutable release manifest schema
 [docs/cicd-setup.md](docs/cicd-setup.md)에 정리했습니다.
 Kubernetes·KServe·Argo CD·Knative의 역할과 선택 기준은
 [docs/kubernetes-serving.md](docs/kubernetes-serving.md)를 참고합니다.
-현재 로컬 Kind·KServe·MLX-LM의 구조와 실행 흐름은
-[docs/local-kind-kserve-mlx.md](docs/local-kind-kserve-mlx.md)에 자세히 정리했습니다.
+기존 로컬 Kind·KServe·MLX-LM 실험 기록은
+[docs/local-kind-kserve-mlx.md](docs/local-kind-kserve-mlx.md)에 남겨 두었습니다.
 모델·양자화·thinking과 생성·엔진 옵션은
 [docs/model-and-inference-options.md](docs/model-and-inference-options.md)에 정리했습니다.
 

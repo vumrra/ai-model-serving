@@ -18,6 +18,18 @@ def _env_float(name: str, default: float) -> float:
     return value
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    value = raw.strip().lower()
+    if value in {"1", "true", "yes", "on"}:
+        return True
+    if value in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError(f"{name} must be a boolean")
+
+
 def _env_alias(name: str, legacy_name: str, default: str) -> str:
     return os.getenv(name, os.getenv(legacy_name, default))
 
@@ -47,6 +59,7 @@ class Settings:
     rate_limit_requests: int = 5
     rate_limit_window_seconds: int = 60
     chat_ui_enabled: bool = False
+    enable_thinking: bool = False
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -90,5 +103,6 @@ class Settings:
             rate_limit_window_seconds=_env_int(
                 "RATE_LIMIT_WINDOW_SECONDS", defaults.rate_limit_window_seconds
             ),
-            chat_ui_enabled=os.getenv("CHAT_UI_ENABLED", "").lower() in {"1", "true", "yes"},
+            chat_ui_enabled=_env_bool("CHAT_UI_ENABLED", defaults.chat_ui_enabled),
+            enable_thinking=_env_bool("ENABLE_THINKING", defaults.enable_thinking),
         )

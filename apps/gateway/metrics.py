@@ -39,5 +39,12 @@ class GatewayMetrics:
 
 
 def metric_path(path: str) -> str:
-    known = {"/livez", "/readyz", "/version", "/metrics", "/v1/chat/completions"}
+    known = {
+        "/livez",
+        "/readyz",
+        "/version",
+        "/metrics",
+        "/v1/models",
+        "/v1/chat/completions",
+    }
     return path if path in known else "other"

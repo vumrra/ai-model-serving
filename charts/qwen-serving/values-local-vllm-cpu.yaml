@@ -1,0 +1,40 @@
+name: qwen-vllm-cpu
+
+runtime:
+  name: qwen-vllm-cpu
+  image: docker.io/vllm/vllm-openai-cpu:v0.27.1-arm64@sha256:e6745d7ba6610f637c6f22fc06cd730342e50245b6c46767235600483adfbbde
+  imagePullPolicy: IfNotPresent
+  port: 8000
+  args:
+    - Qwen/Qwen3-4B
+    - --revision
+    - 1cfa9a7208912126459214e8b04321603b3df60c
+    - --served-model-name
+    - qwen3-4b
+    - --dtype
+    - bfloat16
+    - --max-model-len
+    - "1024"
+    - --max-num-seqs
+    - "1"
+  env:
+    VLLM_CPU_KVCACHE_SPACE: "1"
+
+model:
+  format: huggingface
+  id: Qwen/Qwen3-4B
+  revision: 1cfa9a7208912126459214e8b04321603b3df60c
+  alias: qwen3-4b
+  enableThinking: false
+
+predictor:
+  deploymentStrategy:
+    type: Recreate
+
+resources:
+  requests:
+    cpu: "2"
+    memory: 10Gi
+  limits:
+    cpu: "4"
+    memory: 14Gi

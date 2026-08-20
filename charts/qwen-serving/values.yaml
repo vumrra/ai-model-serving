@@ -5,6 +5,8 @@ runtime:
   image: qwen-mlx-cpu:local
   imagePullPolicy: IfNotPresent
   port: 8000
+  command: []
+  args: []
   env: {}
 
 model:

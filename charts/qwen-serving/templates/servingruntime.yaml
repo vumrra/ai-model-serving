@@ -17,6 +17,14 @@ spec:
     - name: kserve-container
       image: {{ required "runtime.image is required" .Values.runtime.image | quote }}
       imagePullPolicy: {{ .Values.runtime.imagePullPolicy }}
+      {{- with .Values.runtime.command }}
+      command:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.runtime.args }}
+      args:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       ports:
         - name: http1
           containerPort: {{ .Values.runtime.port }}

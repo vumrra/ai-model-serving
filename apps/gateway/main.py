@@ -31,7 +31,7 @@ _CHAT_UI = Path(__file__).with_name("chat.html")
 _LOCAL_ENGINES = {
     "llama_cpp": ("llama.cpp", "http://127.0.0.1:8003", "qwen3-0.6b"),
     "mlx_lm": ("MLX-LM", "http://127.0.0.1:8004", "default_model"),
-    "kserve_mlx": ("KServe · MLX-LM", "http://127.0.0.1:8005", "default_model"),
+    "kserve_vllm": ("KServe · vLLM CPU", "http://127.0.0.1:8005", "qwen3-4b"),
 }
 
 
@@ -231,6 +231,20 @@ def create_app(
             serving_config_sha256=settings.serving_config_sha256,
         )
 
+    @application.get("/v1/models")
+    async def models(_: str = Depends(authorize_and_limit)) -> dict[str, Any]:
+        return {
+            "object": "list",
+            "data": [
+                {
+                    "id": settings.public_model_name,
+                    "object": "model",
+                    "created": 0,
+                    "owned_by": "qwen-serving-lab",
+                }
+            ],
+        }
+
     async def proxy_completion(
         payload: ChatCompletionRequest,
         request: Request,
@@ -238,7 +252,9 @@ def create_app(
     ) -> Any:
         upstream_payload = payload.model_dump()
         upstream_payload["model"] = upstream.settings.upstream_model_name
-        upstream_payload["chat_template_kwargs"] = {"enable_thinking": True}
+        upstream_payload["chat_template_kwargs"] = {
+            "enable_thinking": upstream.settings.enable_thinking
+        }
         request_id = _request_id(request)
         application.state.metrics.active.inc()
 
@@ -294,7 +310,7 @@ def create_app(
         async def ui_chat_completions(
             payload: ChatCompletionRequest,
             request: Request,
-            engine: Literal["llama_cpp", "mlx_lm", "kserve_mlx"],
+            engine: Literal["llama_cpp", "mlx_lm", "kserve_vllm"],
             _: str = Depends(authorize_and_limit),
         ) -> Any:
             _validate_request(payload, settings)

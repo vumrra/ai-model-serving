@@ -1,3 +1,4 @@
+import json
 from collections.abc import Iterator
 from dataclasses import replace
 
@@ -63,6 +64,50 @@ def test_non_stream_completion_is_openai_compatible(client: TestClient):
     }
     assert body["choices"][0]["finish_reason"] == "stop"
     assert body["usage"]["total_tokens"] > 0
+
+
+def test_models_lists_public_alias_and_requires_auth(client: TestClient):
+    unauthorized = client.get("/v1/models")
+    response = client.get("/v1/models", headers=_headers())
+
+    assert unauthorized.status_code == 401
+    assert response.status_code == 200
+    assert response.json() == {
+        "object": "list",
+        "data": [
+            {
+                "id": "qwen-demo",
+                "object": "model",
+                "created": 0,
+                "owned_by": "qwen-serving-lab",
+            }
+        ],
+    }
+
+
+def test_gateway_disables_thinking_for_upstream(settings: Settings):
+    payloads: list[dict] = []
+
+    def upstream(request: httpx.Request) -> httpx.Response:
+        payloads.append(json.loads(request.content))
+        return httpx.Response(
+            200,
+            json={
+                "object": "chat.completion",
+                "model": "mock-qwen",
+                "choices": [],
+            },
+        )
+
+    gateway = create_gateway(
+        replace(settings, enable_thinking=False),
+        httpx.MockTransport(upstream),
+    )
+    with TestClient(gateway) as test_client:
+        response = test_client.post("/v1/chat/completions", headers=_headers(), json=_payload())
+
+    assert response.status_code == 200
+    assert payloads[0]["chat_template_kwargs"] == {"enable_thinking": False}
 
 
 def test_stream_completion_ends_with_done(client: TestClient):
