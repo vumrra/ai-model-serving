@@ -30,8 +30,11 @@ Open WebUI → FastAPI Gateway → Kind/KServe → vLLM ARM64 CPU → Qwen3-1.7B
 ## 최종 모델 서빙 아키텍처
 
 아래는 로드맵을 완료했을 때의 운영 목표입니다. 현재 Kind에는 Model Pod만 배포되어 있고
-Gateway와 Chat UI는 Mac에서 실행됩니다. 운영에서는 Gateway/UI와 모델을 모두 GKE에
-배포하되, 일반 웹 애플리케이션과 모델 serving 영역을 분리합니다.
+Gateway와 Chat UI는 Mac에서 실행됩니다. 다음 배포 대상은 Windows 11·WSL2·GTX 1660의
+Minikube이며, 같은 Helm/KServe/Argo CD 구조를 유지해 이후 GKE로 이동할 수 있게 합니다.
+
+- [Windows GTX 1660 GPU 운영 구조](docs/windows-gpu-ops.md)
+- [GTX 1660 추론 최적화와 아티클 실험 계획](docs/gtx1660-inference-optimization.md)
 
 ### API 요청과 Kubernetes 구성
 
