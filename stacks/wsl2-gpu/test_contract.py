@@ -185,6 +185,13 @@ def test_gitops_apps_pull_git_without_cluster_credentials_in_ci() -> None:
     } >= {("https://kubernetes.default.svc", "kube-system")}
     model = next(item for item in applications if item["metadata"]["name"] == "qwen-model")
     assert model["spec"]["sources"][0]["targetRevision"] == "codex/windows-gpu"
+    assert model["spec"]["ignoreDifferences"] == [
+        {
+            "group": "serving.kserve.io",
+            "kind": "InferenceService",
+            "jsonPointers": ["/spec/predictor/model/name"],
+        }
+    ]
 
     workflow = (ROOT / ".github/workflows/wsl2-gpu-release.yml").read_text(encoding="utf-8")
     assert "platforms: linux/amd64" in workflow

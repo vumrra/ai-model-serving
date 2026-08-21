@@ -21,6 +21,11 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: qwen-serving
+  ignoreDifferences:
+    - group: serving.kserve.io
+      kind: InferenceService
+      jsonPointers:
+        - /spec/predictor/model/name
   syncPolicy:
     automated:
       prune: true
