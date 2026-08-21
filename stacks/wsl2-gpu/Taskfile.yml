@@ -26,6 +26,9 @@ tasks:
   minikube-gpu-smoke:
     desc: Minikube Pod에 GPU 1개를 할당하고 nvidia-smi 결과를 출력합니다.
     cmds:
+      - kubectl patch daemonset nvidia-device-plugin-daemonset --namespace kube-system --type=strategic --patch-file "{{.TASKFILE_DIR}}/nvidia-device-plugin-patch.yaml"
+      - kubectl rollout status daemonset/nvidia-device-plugin-daemonset --namespace kube-system --timeout=5m
+      - test "$(kubectl get node {{.PROFILE}} -o jsonpath='{.status.allocatable.nvidia\.com/gpu}')" = "1"
       - kubectl apply --filename "{{.TASKFILE_DIR}}/gpu-smoke.yaml"
       - kubectl wait --for=jsonpath='{.status.phase}'=Succeeded pod/wsl2-gpu-smoke --timeout=10m
       - kubectl logs pod/wsl2-gpu-smoke

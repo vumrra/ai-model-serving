@@ -66,3 +66,11 @@ def test_wsl2_tasks_keep_endpoints_local_and_cluster_deletion_explicit() -> None
     assert "--gpus=all" in tasks["minikube-up"]["cmds"][0]
     assert "--address 127.0.0.1" in tasks["kserve-forward"]["cmds"][0]
     assert "minikube delete" not in (STACK / "Taskfile.yml").read_text(encoding="utf-8")
+
+    smoke = yaml.safe_load((STACK / "gpu-smoke.yaml").read_text(encoding="utf-8"))
+    container = smoke["spec"]["containers"][0]
+    assert container["image"] == (
+        "docker.io/library/ubuntu@sha256:"
+        "2260313b31c8c011cd2eebe728008efac1b3982be73eb71348ea2648d2c0e09b"
+    )
+    assert container["resources"]["limits"] == {"nvidia.com/gpu": 1}

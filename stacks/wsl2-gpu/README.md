@@ -12,6 +12,7 @@ Client -> FastAPI Gateway -> KServe Service -> vLLM -> Qwen3-1.7B
 - vLLM: `v0.8.5@sha256:6cf9808c...a33d33`
 - Model revision: `70d244cc...b1ad5e`
 - FP16, context 1024, sequence 1, GPU utilization 0.85
+- WSL2 NVML/DXCore는 device plugin과 GPU Pod에 read-only mount
 - Web UI, quantization, CPU offload, Knative, Istio 없음
 
 ## Gate
