@@ -100,13 +100,15 @@ def test_wsl2_gpu_contract() -> None:
 
 
 def test_wsl2_tasks_keep_endpoints_local_and_cluster_deletion_explicit() -> None:
-    taskfile = yaml.safe_load((STACK / "Taskfile.yml").read_text(encoding="utf-8"))
+    taskfile_text = (STACK / "Taskfile.yml").read_text(encoding="utf-8")
+    taskfile = yaml.safe_load(taskfile_text)
     tasks = taskfile["tasks"]
 
     assert "--gpus=all" in tasks["minikube-up"]["cmds"][0]
     assert "--address 127.0.0.1" in tasks["kserve-forward"]["cmds"][0]
     assert "--address 127.0.0.1" in tasks["gateway-forward"]["cmds"][0]
-    assert "minikube delete" not in (STACK / "Taskfile.yml").read_text(encoding="utf-8")
+    assert "minikube delete" not in taskfile_text
+    assert "s|targetRevision: main|targetRevision: {{.GIT_REVISION}}|" in taskfile_text
 
     smoke = yaml.safe_load((STACK / "gpu-smoke.yaml").read_text(encoding="utf-8"))
     container = smoke["spec"]["containers"][0]
@@ -167,6 +169,7 @@ def test_gateway_accepts_an_immutable_image_digest() -> None:
 def test_gitops_apps_pull_git_without_cluster_credentials_in_ci() -> None:
     documents = render_gitops()
     applications = [item for item in documents if item["kind"] == "Application"]
+    project = next(item for item in documents if item["kind"] == "AppProject")
 
     assert {item["metadata"]["name"] for item in applications} == {
         "qwen-cert-manager",
@@ -177,6 +180,9 @@ def test_gitops_apps_pull_git_without_cluster_credentials_in_ci() -> None:
     }
     assert all(item["spec"]["syncPolicy"]["automated"]["selfHeal"] for item in applications)
     assert not any(item["kind"] == "Secret" for item in documents)
+    assert {
+        (item["server"], item["namespace"]) for item in project["spec"]["destinations"]
+    } >= {("https://kubernetes.default.svc", "kube-system")}
     model = next(item for item in applications if item["metadata"]["name"] == "qwen-model")
     assert model["spec"]["sources"][0]["targetRevision"] == "codex/windows-gpu"
 

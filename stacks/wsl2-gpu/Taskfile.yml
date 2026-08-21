@@ -108,8 +108,8 @@ tasks:
     desc: root Application 하나만 수동 적용합니다.
     cmds:
       - >-
-        sed --expression='s/targetRevision: main/targetRevision: {{.GIT_REVISION}}/'
-        --expression='s/value: main/value: {{.GIT_REVISION}}/'
+        sed --expression='s|targetRevision: main|targetRevision: {{.GIT_REVISION}}|'
+        --expression='s|value: main|value: {{.GIT_REVISION}}|'
         "{{.TASKFILE_DIR}}/gitops/bootstrap/root-application.yaml" | kubectl apply --filename=-
       - kubectl --namespace argocd wait --for=jsonpath='{.status.health.status}'=Healthy application/qwen-wsl2-gpu --timeout=10m
 
