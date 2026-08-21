@@ -2,4 +2,5 @@ kserve:
   controller:
     deploymentMode: Standard
     gateway:
+      disableIstioVirtualHost: true
       disableIngressCreation: true

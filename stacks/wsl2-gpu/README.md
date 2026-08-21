@@ -22,6 +22,7 @@ task -d stacks/wsl2-gpu verify
 task -d stacks/wsl2-gpu docker-gpu-smoke
 task -d stacks/wsl2-gpu minikube-up
 task -d stacks/wsl2-gpu minikube-gpu-smoke
+task -d stacks/wsl2-gpu kserve-install
 task -d stacks/wsl2-gpu kserve-deploy
 task -d stacks/wsl2-gpu kserve-forward
 ```

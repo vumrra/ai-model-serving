@@ -13,7 +13,7 @@ spec:
     - v1
   storageHelper:
     disabled: true
-  {{- if or .Values.runtime.shmSize .Values.cache.enabled }}
+  {{- if or .Values.runtime.shmSize .Values.cache.enabled .Values.runtime.extraVolumes }}
   volumes:
     {{- if .Values.runtime.shmSize }}
     - name: dshm
@@ -25,6 +25,9 @@ spec:
     - name: model-cache
       persistentVolumeClaim:
         claimName: {{ .Values.name }}-model-cache
+    {{- end }}
+    {{- with .Values.runtime.extraVolumes }}
+    {{- toYaml . | nindent 4 }}
     {{- end }}
   {{- end }}
   containers:
@@ -39,7 +42,7 @@ spec:
       args:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- if or .Values.runtime.shmSize .Values.cache.enabled }}
+      {{- if or .Values.runtime.shmSize .Values.cache.enabled .Values.runtime.extraVolumeMounts }}
       volumeMounts:
         {{- if .Values.runtime.shmSize }}
         - name: dshm
@@ -48,6 +51,9 @@ spec:
         {{- if .Values.cache.enabled }}
         - name: model-cache
           mountPath: {{ .Values.cache.mountPath }}
+        {{- end }}
+        {{- with .Values.runtime.extraVolumeMounts }}
+        {{- toYaml . | nindent 8 }}
         {{- end }}
       {{- end }}
       ports:

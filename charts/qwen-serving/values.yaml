@@ -9,6 +9,8 @@ runtime:
   args: []
   env: {}
   shmSize: ""
+  extraVolumes: []
+  extraVolumeMounts: []
   startupProbeFailureThreshold: 180
 
 cache:

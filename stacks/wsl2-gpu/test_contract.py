@@ -32,6 +32,7 @@ def test_wsl2_gpu_contract() -> None:
         "6cf9808ca8810fc6c3fd0451c2e7784fb224590d81f7db338e7eaf3c02a33d33"
     )
     assert container["args"] == [
+        "--model",
         "Qwen/Qwen3-1.7B",
         "--revision",
         "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
@@ -48,9 +49,15 @@ def test_wsl2_gpu_contract() -> None:
     ]
     assert container["resources"]["requests"]["nvidia.com/gpu"] == 1
     assert container["resources"]["limits"]["nvidia.com/gpu"] == 1
+    assert {item["name"]: item["value"] for item in container["env"]}["HF_HUB_DISABLE_XET"] == "1"
     assert container["volumeMounts"] == [
         {"name": "dshm", "mountPath": "/dev/shm"},
         {"name": "model-cache", "mountPath": "/root/.cache"},
+        {
+            "name": "wsl2-dxcore",
+            "mountPath": "/usr/lib/x86_64-linux-gnu/libdxcore.so",
+            "readOnly": True,
+        },
     ]
     assert service["metadata"]["annotations"]["serving.kserve.io/deploymentMode"] == ("Standard")
     assert service["spec"]["predictor"]["deploymentStrategy"]["type"] == "Recreate"

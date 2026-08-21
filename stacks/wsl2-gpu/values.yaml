@@ -7,6 +7,7 @@ runtime:
   port: 8000
   command: []
   args:
+    - --model
     - Qwen/Qwen3-1.7B
     - --revision
     - 70d244cc86ccca08cf5af4e1e306ecf908b1ad5e
@@ -22,8 +23,18 @@ runtime:
     - qwen3-1.7b
   env:
     HF_HOME: /root/.cache/huggingface
+    HF_HUB_DISABLE_XET: "1"
     VLLM_CACHE_ROOT: /root/.cache/vllm
   shmSize: 1Gi
+  extraVolumes:
+    - name: wsl2-dxcore
+      hostPath:
+        path: /usr/lib/x86_64-linux-gnu/libdxcore.so
+        type: File
+  extraVolumeMounts:
+    - name: wsl2-dxcore
+      mountPath: /usr/lib/x86_64-linux-gnu/libdxcore.so
+      readOnly: true
   startupProbeFailureThreshold: 90
 
 cache:
