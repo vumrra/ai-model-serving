@@ -180,9 +180,9 @@ def test_gitops_apps_pull_git_without_cluster_credentials_in_ci() -> None:
     }
     assert all(item["spec"]["syncPolicy"]["automated"]["selfHeal"] for item in applications)
     assert not any(item["kind"] == "Secret" for item in documents)
-    assert {
-        (item["server"], item["namespace"]) for item in project["spec"]["destinations"]
-    } >= {("https://kubernetes.default.svc", "kube-system")}
+    assert {(item["server"], item["namespace"]) for item in project["spec"]["destinations"]} >= {
+        ("https://kubernetes.default.svc", "kube-system")
+    }
     model = next(item for item in applications if item["metadata"]["name"] == "qwen-model")
     assert model["spec"]["sources"][0]["targetRevision"] == "codex/windows-gpu"
     assert model["spec"]["ignoreDifferences"] == [
