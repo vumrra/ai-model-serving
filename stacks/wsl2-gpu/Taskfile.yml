@@ -1,0 +1,53 @@
+version: "3"
+
+vars:
+  ROOT:
+    sh: git -C "{{.TASKFILE_DIR}}" rev-parse --show-toplevel
+  PROFILE: qwen-wsl2-gpu
+
+tasks:
+  verify:
+    desc: cluster 없이 WSL2 GPU overlay를 검증합니다.
+    cmds:
+      - helm lint "{{.ROOT}}/charts/qwen-serving" --values "{{.TASKFILE_DIR}}/values.yaml"
+      - helm template qwen-vllm-gpu "{{.ROOT}}/charts/qwen-serving" --values "{{.TASKFILE_DIR}}/values.yaml" > /dev/null
+      - uv run pytest "{{.TASKFILE_DIR}}/test_contract.py"
+
+  docker-gpu-smoke:
+    desc: Docker가 Windows GPU를 WSL2 컨테이너에 전달하는지 확인합니다.
+    cmds:
+      - docker run --rm --gpus all --entrypoint nvidia-smi docker.io/vllm/vllm-openai:v0.8.5@sha256:6cf9808ca8810fc6c3fd0451c2e7784fb224590d81f7db338e7eaf3c02a33d33
+
+  minikube-up:
+    desc: GTX 1660용 Minikube profile을 시작합니다.
+    cmds:
+      - minikube start --profile={{.PROFILE}} --kubernetes-version=v1.35.1 --driver=docker --container-runtime=docker --cpus=6 --memory=8192 --disk-size=60g --gpus=all
+
+  minikube-gpu-smoke:
+    desc: Minikube Pod에 GPU 1개를 할당하고 nvidia-smi 결과를 출력합니다.
+    cmds:
+      - kubectl apply --filename "{{.TASKFILE_DIR}}/gpu-smoke.yaml"
+      - kubectl wait --for=jsonpath='{.status.phase}'=Succeeded pod/wsl2-gpu-smoke --timeout=10m
+      - kubectl logs pod/wsl2-gpu-smoke
+
+  minikube-gpu-smoke-clean:
+    desc: 확인 후 완료된 GPU smoke Pod를 삭제합니다.
+    cmds:
+      - kubectl delete --filename "{{.TASKFILE_DIR}}/gpu-smoke.yaml" --ignore-not-found
+
+  kserve-deploy:
+    desc: WSL2 GPU InferenceService를 배포하고 준비 상태를 기다립니다.
+    cmds:
+      - helm upgrade --install qwen-vllm-gpu "{{.ROOT}}/charts/qwen-serving" --namespace qwen-serving --create-namespace --values "{{.TASKFILE_DIR}}/values.yaml"
+      - kubectl --namespace qwen-serving rollout status deployment/qwen-vllm-gpu-predictor --timeout=20m
+      - kubectl --namespace qwen-serving wait --for=condition=Ready inferenceservice/qwen-vllm-gpu --timeout=20m
+
+  kserve-forward:
+    desc: vLLM 원본 API를 localhost 8005에만 연결합니다.
+    cmds:
+      - kubectl --namespace qwen-serving port-forward --address 127.0.0.1 service/qwen-vllm-gpu-predictor 8005:80
+
+  kserve-status:
+    desc: WSL2 GPU serving 리소스 상태를 확인합니다.
+    cmds:
+      - kubectl --namespace qwen-serving get inferenceservice,servingruntime,deployment,pod,service,persistentvolumeclaim

@@ -94,9 +94,14 @@ def test_local_kserve_disables_ingress_and_waits_for_service_readiness() -> None
 
     taskfile = yaml.safe_load((ROOT / "Taskfile.yml").read_text(encoding="utf-8"))
     commands = taskfile["tasks"]["kserve-deploy"]["cmds"]
-    assert "wait --for=condition=Ready inferenceservice/qwen-vllm-cpu" in commands[1]
-    assert "--timeout=60m" in commands[1]
-    assert "rollout status deployment/qwen-vllm-cpu-predictor" in commands[2]
+    assert any(
+        "wait --for=condition=Ready inferenceservice/qwen-vllm-cpu" in command
+        and "--timeout=60m" in command
+        for command in commands
+    )
+    assert any(
+        "rollout status deployment/qwen-vllm-cpu-predictor" in command for command in commands
+    )
 
 
 def test_open_webui_uses_gateway_and_persistent_volume() -> None:
