@@ -1,13 +1,13 @@
 image:
   repository: ghcr.io/vumrra/ai-model-serving/gateway
   tag: ""
-  digest: ""
+  digest: sha256:b735e38e2548b9060030f2d88eaa1d90e813dae7954c2ddfd6731af77a7c94ce
   pullPolicy: IfNotPresent
 
 releaseId: gitops
-gitSha: unknown
-gatewayImage: unknown
-servingConfigSha256: unknown
+gitSha: aa08eb65f0be
+gatewayImage: ghcr.io/vumrra/ai-model-serving/gateway@sha256:b735e38e2548b9060030f2d88eaa1d90e813dae7954c2ddfd6731af77a7c94ce
+servingConfigSha256: c813e71fe86dad3c6d6cb32b40738770ebb49f18014d2e46b3e4f5097b0676e1
 
 smoke:
   enabled: true
