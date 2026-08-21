@@ -25,4 +25,5 @@ jobs:
       - run: uv sync --frozen --dev
       - run: uv run ruff check stacks/wsl2-gpu
       - run: helm lint charts/qwen-serving --values stacks/wsl2-gpu/values.yaml
+      - run: helm lint stacks/wsl2-gpu/gateway
       - run: uv run pytest stacks/wsl2-gpu/test_contract.py

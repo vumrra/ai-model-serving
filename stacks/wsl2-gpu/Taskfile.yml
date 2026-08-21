@@ -4,6 +4,10 @@ vars:
   ROOT:
     sh: git -C "{{.TASKFILE_DIR}}" rev-parse --show-toplevel
   PROFILE: qwen-wsl2-gpu
+  GATEWAY_TAG:
+    sh: git -C "{{.TASKFILE_DIR}}" rev-parse --short=12 HEAD
+  SERVING_CONFIG_SHA256:
+    sh: sha256sum "{{.TASKFILE_DIR}}/values.yaml" | cut --delimiter=' ' --fields=1
 
 tasks:
   verify:
@@ -63,3 +67,30 @@ tasks:
     cmds:
       - kubectl --namespace qwen-serving get inferenceservice,servingruntime,deployment,pod,service,persistentvolumeclaim
       - kubectl --namespace kserve get deployment,pod
+
+  gateway-image-build:
+    desc: Gateway linux/amd64 이미지를 빌드하고 Minikube에 적재합니다.
+    cmds:
+      - install --directory --mode 700 /tmp/qwen-serving-docker-public
+      - DOCKER_CONFIG=/tmp/qwen-serving-docker-public docker build --platform linux/amd64 --tag "qwen-gateway:{{.GATEWAY_TAG}}" --file "{{.ROOT}}/images/gateway.Dockerfile" "{{.ROOT}}"
+      - docker save "qwen-gateway:{{.GATEWAY_TAG}}" | docker exec --interactive "{{.PROFILE}}" docker load
+      - docker exec "{{.PROFILE}}" docker image inspect "qwen-gateway:{{.GATEWAY_TAG}}" > /dev/null
+
+  gateway-deploy:
+    desc: API key Secret과 Gateway를 배포합니다.
+    cmds:
+      - ': "${PUBLIC_API_KEY:?set PUBLIC_API_KEY}"'
+      - kubectl --namespace qwen-serving create secret generic qwen-gateway-api-key --from-literal=api-key="$PUBLIC_API_KEY" --dry-run=client --output=yaml | kubectl apply --filename=-
+      - helm upgrade --install qwen-gateway "{{.TASKFILE_DIR}}/gateway" --namespace qwen-serving --set-string image.tag="{{.GATEWAY_TAG}}" --set-string gitSha="{{.GATEWAY_TAG}}" --set-string gatewayImage="qwen-gateway:{{.GATEWAY_TAG}}" --set-string servingConfigSha256="{{.SERVING_CONFIG_SHA256}}"
+      - kubectl --namespace qwen-serving rollout status deployment/qwen-gateway --timeout=5m
+
+  gateway-forward:
+    desc: Gateway API를 localhost 8080에만 연결합니다.
+    cmds:
+      - kubectl --namespace qwen-serving port-forward --address 127.0.0.1 service/qwen-gateway 8080:80
+
+  gateway-status:
+    desc: Gateway 상태를 확인합니다.
+    cmds:
+      - kubectl --namespace qwen-serving get deployment/qwen-gateway service/qwen-gateway
+      - kubectl --namespace qwen-serving get pod --selector app=qwen-gateway
