@@ -80,8 +80,8 @@ def test_wsl2_gpu_contract() -> None:
         "--served-model-name",
         "qwen3-1.7b",
     ]
-    assert container["resources"]["requests"]["nvidia.com/gpu"] == 1
-    assert container["resources"]["limits"]["nvidia.com/gpu"] == 1
+    assert container["resources"]["requests"]["nvidia.com/gpu"] == "1"
+    assert container["resources"]["limits"]["nvidia.com/gpu"] == "1"
     assert {item["name"]: item["value"] for item in container["env"]}["HF_HUB_DISABLE_XET"] == "1"
     assert container["volumeMounts"] == [
         {"name": "dshm", "mountPath": "/dev/shm"},
