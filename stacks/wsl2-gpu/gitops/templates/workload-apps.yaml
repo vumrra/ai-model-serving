@@ -1,0 +1,64 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: qwen-model
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  project: qwen-wsl2-gpu
+  sources:
+    - repoURL: {{ .Values.repoUrl | quote }}
+      targetRevision: {{ .Values.repoRevision | quote }}
+      path: charts/qwen-serving
+      helm:
+        releaseName: qwen-vllm-gpu
+        valueFiles:
+          - $values/stacks/wsl2-gpu/values.yaml
+    - repoURL: {{ .Values.repoUrl | quote }}
+      targetRevision: {{ .Values.repoRevision | quote }}
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: qwen-serving
+  ignoreDifferences:
+    - group: serving.kserve.io
+      kind: InferenceService
+      jsonPointers:
+        - /spec/predictor/model/name
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+---
+{{- if .Values.gateway.enabled }}
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: qwen-gateway
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  project: qwen-wsl2-gpu
+  source:
+    repoURL: {{ .Values.repoUrl | quote }}
+    targetRevision: {{ .Values.repoRevision | quote }}
+    path: stacks/wsl2-gpu/gateway
+    helm:
+      releaseName: qwen-gateway
+      valueFiles:
+        - values.yaml
+        - values-gitops.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: qwen-serving
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+{{- end }}

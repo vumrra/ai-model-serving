@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: wsl2-gpu-smoke
+spec:
+  restartPolicy: Never
+  containers:
+    - name: nvidia-smi
+      image: docker.io/library/ubuntu@sha256:2260313b31c8c011cd2eebe728008efac1b3982be73eb71348ea2648d2c0e09b
+      imagePullPolicy: IfNotPresent
+      command: [nvidia-smi]
+      volumeMounts:
+        - name: wsl2-dxcore
+          mountPath: /usr/lib/x86_64-linux-gnu/libdxcore.so
+          readOnly: true
+      resources:
+        limits:
+          nvidia.com/gpu: 1
+  volumes:
+    - name: wsl2-dxcore
+      hostPath:
+        path: /usr/lib/x86_64-linux-gnu/libdxcore.so
+        type: File

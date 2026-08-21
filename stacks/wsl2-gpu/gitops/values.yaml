@@ -1,0 +1,5 @@
+repoUrl: https://github.com/vumrra/ai-model-serving.git
+repoRevision: main
+
+gateway:
+  enabled: true

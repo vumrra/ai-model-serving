@@ -1,0 +1,124 @@
+version: "3"
+
+vars:
+  ROOT:
+    sh: git -C "{{.TASKFILE_DIR}}" rev-parse --show-toplevel
+  PROFILE: qwen-wsl2-gpu
+  GATEWAY_TAG:
+    sh: git -C "{{.TASKFILE_DIR}}" rev-parse --short=12 HEAD
+  SERVING_CONFIG_SHA256:
+    sh: sha256sum "{{.TASKFILE_DIR}}/values.yaml" | cut --delimiter=' ' --fields=1
+  GIT_REVISION:
+    sh: printf '%s' "${GIT_REVISION:-main}"
+
+tasks:
+  verify:
+    desc: cluster 없이 WSL2 GPU overlay를 검증합니다.
+    cmds:
+      - helm lint "{{.ROOT}}/charts/qwen-serving" --values "{{.TASKFILE_DIR}}/values.yaml"
+      - helm template qwen-vllm-gpu "{{.ROOT}}/charts/qwen-serving" --values "{{.TASKFILE_DIR}}/values.yaml" > /dev/null
+      - uv run pytest "{{.TASKFILE_DIR}}/test_contract.py"
+
+  docker-gpu-smoke:
+    desc: Docker가 Windows GPU를 WSL2 컨테이너에 전달하는지 확인합니다.
+    cmds:
+      - docker run --rm --gpus all --entrypoint nvidia-smi docker.io/vllm/vllm-openai:v0.8.5@sha256:6cf9808ca8810fc6c3fd0451c2e7784fb224590d81f7db338e7eaf3c02a33d33
+
+  minikube-up:
+    desc: GTX 1660용 Minikube profile을 시작합니다.
+    cmds:
+      - minikube start --profile={{.PROFILE}} --kubernetes-version=v1.35.1 --driver=docker --container-runtime=docker --cpus=6 --memory=8192 --disk-size=60g --gpus=all
+
+  minikube-gpu-smoke:
+    desc: Minikube Pod에 GPU 1개를 할당하고 nvidia-smi 결과를 출력합니다.
+    cmds:
+      - kubectl patch daemonset nvidia-device-plugin-daemonset --namespace kube-system --type=strategic --patch-file "{{.TASKFILE_DIR}}/nvidia-device-plugin-patch.yaml"
+      - kubectl rollout status daemonset/nvidia-device-plugin-daemonset --namespace kube-system --timeout=5m
+      - test "$(kubectl get node {{.PROFILE}} -o jsonpath='{.status.allocatable.nvidia\.com/gpu}')" = "1"
+      - kubectl apply --filename "{{.TASKFILE_DIR}}/gpu-smoke.yaml"
+      - kubectl wait --for=jsonpath='{.status.phase}'=Succeeded pod/wsl2-gpu-smoke --timeout=10m
+      - kubectl logs pod/wsl2-gpu-smoke
+
+  minikube-gpu-smoke-clean:
+    desc: 확인 후 완료된 GPU smoke Pod를 삭제합니다.
+    cmds:
+      - kubectl delete --filename "{{.TASKFILE_DIR}}/gpu-smoke.yaml" --ignore-not-found
+
+  kserve-install:
+    desc: cert-manager와 KServe Standard Mode를 설치합니다.
+    cmds:
+      - helm upgrade --install cert-manager oci://quay.io/jetstack/charts/cert-manager --version v1.17.2 --namespace cert-manager --create-namespace --set crds.enabled=true --wait --timeout 10m
+      - helm upgrade --install kserve-crd oci://ghcr.io/kserve/charts/kserve-crd --version v0.19.0 --namespace kserve --create-namespace --wait
+      - helm upgrade --install kserve oci://ghcr.io/kserve/charts/kserve-resources --version v0.19.0 --namespace kserve --values "{{.ROOT}}/deploy/kubernetes/kserve-values.yaml" --wait --timeout 10m
+
+  kserve-deploy:
+    desc: WSL2 GPU InferenceService를 배포하고 준비 상태를 기다립니다.
+    cmds:
+      - helm upgrade --install qwen-vllm-gpu "{{.ROOT}}/charts/qwen-serving" --namespace qwen-serving --create-namespace --values "{{.TASKFILE_DIR}}/values.yaml"
+      - kubectl --namespace qwen-serving wait --for=create deployment/qwen-vllm-gpu-predictor --timeout=2m
+      - kubectl --namespace qwen-serving rollout status deployment/qwen-vllm-gpu-predictor --timeout=20m
+      - kubectl --namespace qwen-serving wait --for=condition=Ready inferenceservice/qwen-vllm-gpu --timeout=20m
+
+  kserve-forward:
+    desc: vLLM 원본 API를 localhost 8005에만 연결합니다.
+    cmds:
+      - kubectl --namespace qwen-serving port-forward --address 127.0.0.1 service/qwen-vllm-gpu-predictor 8005:80
+
+  kserve-status:
+    desc: WSL2 GPU serving 리소스 상태를 확인합니다.
+    cmds:
+      - kubectl --namespace qwen-serving get inferenceservice,servingruntime,deployment,pod,service,persistentvolumeclaim
+      - kubectl --namespace kserve get deployment,pod
+
+  gateway-image-build:
+    desc: Gateway linux/amd64 이미지를 빌드하고 Minikube에 적재합니다.
+    cmds:
+      - install --directory --mode 700 /tmp/qwen-serving-docker-public
+      - DOCKER_CONFIG=/tmp/qwen-serving-docker-public docker build --platform linux/amd64 --tag "qwen-gateway:{{.GATEWAY_TAG}}" --file "{{.ROOT}}/images/gateway.Dockerfile" "{{.ROOT}}"
+      - docker save "qwen-gateway:{{.GATEWAY_TAG}}" | docker exec --interactive "{{.PROFILE}}" docker load
+      - docker exec "{{.PROFILE}}" docker image inspect "qwen-gateway:{{.GATEWAY_TAG}}" > /dev/null
+
+  gateway-deploy:
+    desc: API key Secret과 Gateway를 배포합니다.
+    cmds:
+      - ': "${PUBLIC_API_KEY:?set PUBLIC_API_KEY}"'
+      - kubectl --namespace qwen-serving create secret generic qwen-gateway-api-key --from-literal=api-key="$PUBLIC_API_KEY" --dry-run=client --output=yaml | kubectl apply --filename=-
+      - helm upgrade --install qwen-gateway "{{.TASKFILE_DIR}}/gateway" --namespace qwen-serving --set-string image.tag="{{.GATEWAY_TAG}}" --set-string gitSha="{{.GATEWAY_TAG}}" --set-string gatewayImage="qwen-gateway:{{.GATEWAY_TAG}}" --set-string servingConfigSha256="{{.SERVING_CONFIG_SHA256}}"
+      - kubectl --namespace qwen-serving rollout status deployment/qwen-gateway --timeout=5m
+
+  gateway-forward:
+    desc: Gateway API를 localhost 8080에만 연결합니다.
+    cmds:
+      - kubectl --namespace qwen-serving port-forward --address 127.0.0.1 service/qwen-gateway 8080:80
+
+  gateway-status:
+    desc: Gateway 상태를 확인합니다.
+    cmds:
+      - kubectl --namespace qwen-serving get deployment/qwen-gateway service/qwen-gateway
+      - kubectl --namespace qwen-serving get pod --selector app=qwen-gateway
+
+  argocd-install:
+    desc: Argo CD v3.5.1을 ClusterIP로 bootstrap합니다.
+    cmds:
+      - kubectl create namespace argocd --dry-run=client --output=yaml | kubectl apply --filename=-
+      - kubectl apply --server-side --force-conflicts --namespace argocd --filename https://raw.githubusercontent.com/argoproj/argo-cd/v3.5.1/manifests/install.yaml
+      - kubectl --namespace argocd wait --for=condition=Ready pod --all --timeout=10m
+
+  argocd-bootstrap:
+    desc: root Application 하나만 수동 적용합니다.
+    cmds:
+      - >-
+        sed --expression='s|targetRevision: main|targetRevision: {{.GIT_REVISION}}|'
+        --expression='s|value: main|value: {{.GIT_REVISION}}|'
+        "{{.TASKFILE_DIR}}/gitops/bootstrap/root-application.yaml" | kubectl apply --filename=-
+      - kubectl --namespace argocd wait --for=jsonpath='{.status.health.status}'=Healthy application/qwen-wsl2-gpu --timeout=10m
+
+  argocd-forward:
+    desc: Argo CD UI/API를 localhost 8081에만 연결합니다.
+    cmds:
+      - kubectl --namespace argocd port-forward --address 127.0.0.1 service/argocd-server 8081:443
+
+  argocd-status:
+    desc: GitOps Application 상태를 확인합니다.
+    cmds:
+      - kubectl --namespace argocd get applications
