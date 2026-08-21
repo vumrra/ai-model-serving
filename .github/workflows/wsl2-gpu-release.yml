@@ -1,0 +1,74 @@
+name: wsl2-gpu-release
+
+on:
+  push:
+    branches:
+      - main
+      - codex/**
+    paths:
+      - apps/gateway/**
+      - images/gateway.Dockerfile
+      - pyproject.toml
+      - uv.lock
+      - stacks/wsl2-gpu/gateway/**
+      - '!stacks/wsl2-gpu/gateway/values-gitops.yaml'
+      - .github/workflows/wsl2-gpu-release.yml
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: wsl2-gpu-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  gateway:
+    runs-on: ubuntu-latest
+    env:
+      IMAGE: ghcr.io/${{ github.repository }}/gateway
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --frozen --dev
+      - run: uv run ruff check apps/gateway tests/contract/test_chat_api.py
+      - run: uv run pytest tests/contract/test_chat_api.py tests/unit/test_rate_limit.py
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: images/gateway.Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ env.IMAGE }}:sha-${{ github.sha }}
+      - name: Pin GitOps digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          SHORT_SHA="${GITHUB_SHA:0:12}"
+          CONFIG_SHA="$(sha256sum stacks/wsl2-gpu/values.yaml | cut -d ' ' -f1)"
+          sed -i -E "s|^  digest:.*$|  digest: $DIGEST|" stacks/wsl2-gpu/gateway/values-gitops.yaml
+          sed -i -E "s|^gitSha:.*$|gitSha: $SHORT_SHA|" stacks/wsl2-gpu/gateway/values-gitops.yaml
+          sed -i -E "s|^gatewayImage:.*$|gatewayImage: $IMAGE@$DIGEST|" stacks/wsl2-gpu/gateway/values-gitops.yaml
+          sed -i -E "s|^servingConfigSha256:.*$|servingConfigSha256: $CONFIG_SHA|" stacks/wsl2-gpu/gateway/values-gitops.yaml
+          sed -i -E "s|^  enabled: false$|  enabled: true|" stacks/wsl2-gpu/gitops/values.yaml
+      - name: Commit GitOps update
+        run: |
+          git add stacks/wsl2-gpu/gateway/values-gitops.yaml stacks/wsl2-gpu/gitops/values.yaml
+          git diff --cached --quiet && exit 0
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m "chore(gitops): deploy gateway ${GITHUB_SHA:0:12} [skip ci]"
+          git pull --rebase origin "$GITHUB_REF_NAME"
+          git push origin "HEAD:$GITHUB_REF_NAME"

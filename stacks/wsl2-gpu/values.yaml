@@ -19,6 +19,8 @@ runtime:
     - "1"
     - --gpu-memory-utilization
     - "0.85"
+    - --swap-space
+    - "0"
     - --served-model-name
     - qwen3-1.7b
   env:

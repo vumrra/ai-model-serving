@@ -1,0 +1,5 @@
+apiVersion: v2
+name: qwen-wsl2-gitops
+description: Argo CD applications for the WSL2 GPU stack
+type: application
+version: 0.1.0

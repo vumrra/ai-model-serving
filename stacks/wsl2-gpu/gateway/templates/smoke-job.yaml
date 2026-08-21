@@ -1,0 +1,74 @@
+{{- if .Values.smoke.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: qwen-gateway-smoke
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+spec:
+  backoffLimit: 2
+  template:
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: smoke
+          {{- if .Values.image.digest }}
+          image: {{ printf "%s@%s" .Values.image.repository .Values.image.digest | quote }}
+          {{- else }}
+          image: {{ printf "%s:%s" .Values.image.repository (required "image.tag is required" .Values.image.tag) | quote }}
+          {{- end }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["python", "-c"]
+          args:
+            - |
+              import json
+              import os
+              import urllib.request
+
+              headers = {"Authorization": f"Bearer {os.environ['PUBLIC_API_KEY']}"}
+              models_request = urllib.request.Request(
+                  "http://qwen-gateway/v1/models", headers=headers
+              )
+              with urllib.request.urlopen(models_request, timeout=15) as response:
+                  models = json.load(response)
+              assert models["data"][0]["id"] == "qwen-demo"
+
+              body = json.dumps({
+                  "model": "qwen-demo",
+                  "messages": [{"role": "user", "content": "Reply with exactly: GITOPS OK"}],
+                  "max_tokens": 8,
+                  "temperature": 0,
+              }).encode()
+              chat_request = urllib.request.Request(
+                  "http://qwen-gateway/v1/chat/completions",
+                  data=body,
+                  headers={**headers, "Content-Type": "application/json"},
+              )
+              with urllib.request.urlopen(chat_request, timeout=60) as response:
+                  chat = json.load(response)
+              assert chat["model"] == "qwen-demo"
+              assert chat["choices"][0]["message"]["reasoning_content"] is None
+          env:
+            - name: PUBLIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.apiKeySecretName }}
+                  key: api-key
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+{{- end }}

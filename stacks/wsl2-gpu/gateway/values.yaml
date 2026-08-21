@@ -16,6 +16,9 @@ upstreamModelName: qwen3-1.7b
 rateLimitRequests: 30
 rateLimitWindowSeconds: 60
 
+smoke:
+  enabled: false
+
 resources:
   requests:
     cpu: 50m

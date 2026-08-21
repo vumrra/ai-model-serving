@@ -9,6 +9,7 @@ ROOT = Path(__file__).parents[2]
 STACK = Path(__file__).parent
 CHART = ROOT / "charts/qwen-serving"
 GATEWAY_CHART = STACK / "gateway"
+GITOPS_CHART = STACK / "gitops"
 
 
 def render() -> list[dict[str, object]]:
@@ -24,6 +25,25 @@ def render() -> list[dict[str, object]]:
 def render_gateway() -> list[dict[str, object]]:
     result = subprocess.run(
         ["helm", "template", "gateway", str(GATEWAY_CHART), "--set-string", "image.tag=testsha"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return [document for document in yaml.safe_load_all(result.stdout) if document]
+
+
+def render_gitops() -> list[dict[str, object]]:
+    result = subprocess.run(
+        [
+            "helm",
+            "template",
+            "gitops",
+            str(GITOPS_CHART),
+            "--set-string",
+            "repoRevision=codex/windows-gpu",
+            "--set",
+            "gateway.enabled=true",
+        ],
         check=True,
         capture_output=True,
         text=True,
@@ -55,6 +75,8 @@ def test_wsl2_gpu_contract() -> None:
         "1",
         "--gpu-memory-utilization",
         "0.85",
+        "--swap-space",
+        "0",
         "--served-model-name",
         "qwen3-1.7b",
     ]
@@ -140,3 +162,52 @@ def test_gateway_accepts_an_immutable_image_digest() -> None:
     container = deployment["spec"]["template"]["spec"]["containers"][0]  # type: ignore[index]
 
     assert container["image"] == "qwen-gateway@sha256:testdigest"
+
+
+def test_gitops_apps_pull_git_without_cluster_credentials_in_ci() -> None:
+    documents = render_gitops()
+    applications = [item for item in documents if item["kind"] == "Application"]
+
+    assert {item["metadata"]["name"] for item in applications} == {
+        "qwen-cert-manager",
+        "qwen-kserve-crd",
+        "qwen-kserve",
+        "qwen-model",
+        "qwen-gateway",
+    }
+    assert all(item["spec"]["syncPolicy"]["automated"]["selfHeal"] for item in applications)
+    assert not any(item["kind"] == "Secret" for item in documents)
+    model = next(item for item in applications if item["metadata"]["name"] == "qwen-model")
+    assert model["spec"]["sources"][0]["targetRevision"] == "codex/windows-gpu"
+
+    workflow = (ROOT / ".github/workflows/wsl2-gpu-release.yml").read_text(encoding="utf-8")
+    assert "platforms: linux/amd64" in workflow
+    assert "steps.build.outputs.digest" in workflow
+    assert "values-gitops.yaml" in workflow
+    assert "kubectl" not in workflow
+    assert "KUBECONFIG" not in workflow
+
+
+def test_post_sync_smoke_uses_the_gateway_digest_and_secret() -> None:
+    result = subprocess.run(
+        [
+            "helm",
+            "template",
+            "gateway",
+            str(GATEWAY_CHART),
+            "--values",
+            str(GATEWAY_CHART / "values-gitops.yaml"),
+            "--set-string",
+            "image.digest=sha256:testdigest",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    documents = [document for document in yaml.safe_load_all(result.stdout) if document]
+    job = next(item for item in documents if item["kind"] == "Job")
+    container = job["spec"]["template"]["spec"]["containers"][0]
+
+    assert job["metadata"]["annotations"]["argocd.argoproj.io/hook"] == "PostSync"
+    assert container["image"] == "ghcr.io/vumrra/ai-model-serving/gateway@sha256:testdigest"
+    assert container["env"][0]["valueFrom"]["secretKeyRef"]["name"] == ("qwen-gateway-api-key")

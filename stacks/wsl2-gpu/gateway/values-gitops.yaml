@@ -1,0 +1,13 @@
+image:
+  repository: ghcr.io/vumrra/ai-model-serving/gateway
+  tag: ""
+  digest: ""
+  pullPolicy: IfNotPresent
+
+releaseId: gitops
+gitSha: unknown
+gatewayImage: unknown
+servingConfigSha256: unknown
+
+smoke:
+  enabled: true

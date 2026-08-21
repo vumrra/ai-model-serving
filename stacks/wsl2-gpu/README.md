@@ -28,8 +28,12 @@ task -d stacks/wsl2-gpu kserve-forward
 task -d stacks/wsl2-gpu gateway-image-build
 PUBLIC_API_KEY=change-me task -d stacks/wsl2-gpu gateway-deploy
 task -d stacks/wsl2-gpu gateway-forward
+task -d stacks/wsl2-gpu argocd-install
+GIT_REVISION=main task -d stacks/wsl2-gpu argocd-bootstrap
 ```
 
 각 gate가 통과한 뒤 다음 명령을 실행한다. Windows NVIDIA driver만 사용하며 WSL에 Linux driver를 설치하지 않는다.
 
 `kserve-forward`와 `gateway-forward`는 각각 `127.0.0.1:8005`, `127.0.0.1:8080`에만 연다. API key는 Git에 저장하지 않는다.
+
+Gateway image는 GitHub Actions가 GHCR digest로 고정한다. Argo CD는 Git을 pull하며 rollback은 Git revert로 수행한다.
