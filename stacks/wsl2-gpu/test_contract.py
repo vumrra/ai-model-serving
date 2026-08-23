@@ -107,6 +107,9 @@ def test_wsl2_tasks_keep_endpoints_local_and_cluster_deletion_explicit() -> None
     assert "--gpus=all" in tasks["minikube-up"]["cmds"][0]
     assert "--address 127.0.0.1" in tasks["kserve-forward"]["cmds"][0]
     assert "--address 127.0.0.1" in tasks["gateway-forward"]["cmds"][0]
+    assert "--address=127.0.0.1" in tasks["kubernetes-dashboard-forward"]["cmds"][0]
+    assert "--port=8001" in tasks["kubernetes-dashboard-forward"]["cmds"][0]
+    assert "--address 127.0.0.1" in tasks["argocd-forward"]["cmds"][0]
     assert "minikube delete" not in taskfile_text
     assert "s|targetRevision: main|targetRevision: {{.GIT_REVISION}}|" in taskfile_text
 

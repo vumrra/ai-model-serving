@@ -97,6 +97,11 @@ tasks:
       - kubectl --namespace qwen-serving get deployment/qwen-gateway service/qwen-gateway
       - kubectl --namespace qwen-serving get pod --selector app=qwen-gateway
 
+  kubernetes-dashboard-forward:
+    desc: Kubernetes Dashboard를 localhost 8001에만 연결합니다.
+    cmds:
+      - kubectl proxy --address=127.0.0.1 --port=8001 --accept-hosts='^localhost$,^127\.0\.0\.1$'
+
   argocd-install:
     desc: Argo CD v3.5.1을 ClusterIP로 bootstrap합니다.
     cmds:

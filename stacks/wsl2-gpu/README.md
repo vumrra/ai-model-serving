@@ -91,6 +91,19 @@ curl.exe http://127.0.0.1:18000/readyz
 
 GitHub Actions는 PC가 꺼져 있어도 GitHub에서 이미지 빌드와 GitOps 값 갱신을 완료한다. PC에서 Docker와 Minikube가 실행 중이면 Argo CD가 자동 동기화한다. PC가 꺼져 있었다면 위 시작 명령 실행 후 최신 Git 상태로 따라잡는다. PC 저장소에서 `git pull`할 필요는 없다.
 
+### PR을 main에 merge한 뒤
+
+WSL2 release workflow는 별도 repository Secret 없이 GitHub가 자동 발급하는 `GITHUB_TOKEN`으로 GHCR push와 GitOps commit을 수행한다. Gateway API 키는 GitHub Secret이 아니라 cluster의 `qwen-gateway-api-key` Secret으로 관리한다.
+
+현재 개발 branch로 bootstrap한 cluster는 merge가 끝난 뒤 한 번만 `main`으로 인계한다.
+
+```powershell
+wsl -d Ubuntu -- bash -lc "cd ~/Project/qwen-serving-lab && GIT_REVISION=main task -d stacks/wsl2-gpu argocd-bootstrap"
+wsl -d Ubuntu -- kubectl -n argocd get applications
+```
+
+이후에는 `main` push → GitHub Actions → GHCR digest/GitOps commit → Argo CD pull → Kubernetes sync가 자동으로 진행된다.
+
 ## LAN API: TCP 8000
 
 최초 1회 관리자 PowerShell에서 설치한다.
@@ -126,6 +139,36 @@ Get-NetIPAddress -AddressFamily IPv4 | Where-Object IPAddress -NotLike '127.*'
 
 API 주소는 `http://<WINDOWS_LAN_IP>:8000/v1`이다. 모든 요청에 기존 Gateway API 키가 필요하다.
 
+## 관리 화면
+
+두 명령은 각각 터미널을 점유하므로 일반 PowerShell 창을 따로 열어 실행한다. 둘 다 `127.0.0.1`에만 연결되며 LAN이나 인터넷에는 공개되지 않는다.
+
+Kubernetes Dashboard:
+
+```powershell
+wsl -d Ubuntu -- bash -lc "cd ~/Project/qwen-serving-lab && task -d stacks/wsl2-gpu kubernetes-dashboard-forward"
+```
+
+- 접속: http://127.0.0.1:8001/api/v1/namespaces/kubernetes-dashboard/services/http:kubernetes-dashboard:/proxy/#/workloads?namespace=_all
+- Minikube addon의 `Skip` 로그인을 사용한다.
+
+Argo CD Dashboard:
+
+```powershell
+wsl -d Ubuntu -- bash -lc "cd ~/Project/qwen-serving-lab && task -d stacks/wsl2-gpu argocd-forward"
+```
+
+- 접속: http://127.0.0.1:8081
+- 사용자명: `admin`
+- 최초 비밀번호 확인:
+
+```powershell
+$encoded = wsl -d Ubuntu -- kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}'
+[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($encoded.Trim()))
+```
+
+포트포워드는 해당 PowerShell 창에서 `Ctrl+C`를 누르면 종료된다.
+
 ## 수동 운영
 
 ```bash
@@ -134,6 +177,7 @@ task -d stacks/wsl2-gpu gateway-status
 task -d stacks/wsl2-gpu argocd-status
 task -d stacks/wsl2-gpu kserve-forward   # localhost:8005, 진단 전용
 task -d stacks/wsl2-gpu gateway-forward  # localhost:8080, 진단 전용
+task -d stacks/wsl2-gpu kubernetes-dashboard-forward # localhost:8001
 task -d stacks/wsl2-gpu argocd-forward   # localhost:8081, 진단 전용
 ```
 
