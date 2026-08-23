@@ -100,6 +100,13 @@ wsl -d Ubuntu -- true
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "\\wsl.localhost\Ubuntu\home\vumrra\Project\qwen-serving-lab\stacks\wsl2-gpu\scripts\install-lan-port.ps1"
 ```
 
+방화벽은 `Private` 네트워크에서만 열린다. 현재 프로필을 확인하고, 신뢰하는 LAN인데 `Public`으로 표시될 때만 관리자 PowerShell에서 바꾼다.
+
+```powershell
+Get-NetConnectionProfile
+Set-NetConnectionProfile -InterfaceIndex <INDEX> -NetworkCategory Private
+```
+
 구성 경로:
 
 ```text
