@@ -8,6 +8,7 @@ def test_windows_start_and_lan_exposure_are_gateway_only() -> None:
     install = (STACK / "scripts/install-lan-port.ps1").read_text(encoding="utf-8")
 
     assert "minikube start --profile=qwen-wsl2-gpu" in start
+    assert 'minikube status --profile=qwen-wsl2-gpu --format="{{.Host}}"' in start
     assert "[switch]$RecoverFailedGpuPod" in start
     assert "docker version >/dev/null 2>&1" in start
     assert "desktop restart" in start

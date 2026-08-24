@@ -66,8 +66,11 @@ if (-not $wslDockerReady) {
     throw 'Docker Desktop WSL Integration for Ubuntu is unavailable. Enable Ubuntu in Docker Desktop > Settings > Resources > WSL Integration.'
 }
 
-& wsl.exe -d Ubuntu -- bash -lc 'minikube start --profile=qwen-wsl2-gpu'
-if ($LASTEXITCODE -ne 0) { throw 'Minikube start failed.' }
+$minikubeHost = & wsl.exe -d Ubuntu -- bash -lc 'minikube status --profile=qwen-wsl2-gpu --format="{{.Host}}" 2>/dev/null'
+if ($LASTEXITCODE -ne 0 -or ($minikubeHost -join '').Trim() -ne 'Running') {
+    & wsl.exe -d Ubuntu -- bash -lc 'minikube start --profile=qwen-wsl2-gpu'
+    if ($LASTEXITCODE -ne 0) { throw 'Minikube start failed.' }
+}
 
 & wsl.exe -d Ubuntu -- bash -lc 'kubectl --namespace kube-system rollout status daemonset/nvidia-device-plugin-daemonset --timeout=5m'
 if ($LASTEXITCODE -ne 0) { throw 'NVIDIA device plugin is not ready.' }
