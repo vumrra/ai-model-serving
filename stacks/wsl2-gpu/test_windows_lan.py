@@ -9,6 +9,9 @@ def test_windows_start_and_lan_exposure_are_gateway_only() -> None:
 
     assert "minikube start --profile=qwen-wsl2-gpu" in start
     assert "[switch]$RecoverFailedGpuPod" in start
+    assert "docker version >/dev/null 2>&1" in start
+    assert "desktop restart" in start
+    assert "Docker Desktop WSL Integration for Ubuntu is unavailable" in start
     assert "daemonset/nvidia-device-plugin-daemonset" in start
     assert "deployment/kserve-controller-manager" in start
     assert "--field-selector=status.phase=Failed" in start

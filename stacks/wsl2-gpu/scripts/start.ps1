@@ -12,7 +12,7 @@ $dockerDesktop = Join-Path $dockerRoot 'Docker Desktop.exe'
 $docker = Join-Path $dockerRoot 'resources\bin\docker.exe'
 
 if (-not (Test-Path -LiteralPath $dockerDesktop) -or -not (Test-Path -LiteralPath $docker)) {
-    throw 'Docker Desktop을 찾을 수 없습니다.'
+    throw 'Docker Desktop was not found.'
 }
 
 & $docker info *> $null
@@ -21,40 +21,75 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 $deadline = (Get-Date).AddSeconds($DockerTimeoutSeconds)
+$dockerReady = $false
 do {
     & $docker info *> $null
-    if ($LASTEXITCODE -eq 0) { break }
+    if ($LASTEXITCODE -eq 0) {
+        $dockerReady = $true
+        break
+    }
     Start-Sleep -Seconds 2
 } while ((Get-Date) -lt $deadline)
 
-if ($LASTEXITCODE -ne 0) {
-    throw "Docker Desktop이 ${DockerTimeoutSeconds}초 안에 준비되지 않았습니다."
+if (-not $dockerReady) {
+    throw "Docker Desktop was not ready within ${DockerTimeoutSeconds} seconds."
+}
+
+$wslDockerReady = $false
+$deadline = (Get-Date).AddSeconds(30)
+do {
+    & wsl.exe -d Ubuntu -- bash -lc 'docker version >/dev/null 2>&1'
+    if ($LASTEXITCODE -eq 0) {
+        $wslDockerReady = $true
+        break
+    }
+    Start-Sleep -Seconds 2
+} while ((Get-Date) -lt $deadline)
+
+if (-not $wslDockerReady) {
+    Write-Output 'Docker Desktop WSL Integration is not ready; restarting Docker Desktop once.'
+    & $docker desktop restart
+    if ($LASTEXITCODE -ne 0) { throw 'Docker Desktop restart failed.' }
+
+    $deadline = (Get-Date).AddSeconds($DockerTimeoutSeconds)
+    do {
+        & wsl.exe -d Ubuntu -- bash -lc 'docker version >/dev/null 2>&1'
+        if ($LASTEXITCODE -eq 0) {
+            $wslDockerReady = $true
+            break
+        }
+        Start-Sleep -Seconds 2
+    } while ((Get-Date) -lt $deadline)
+}
+
+if (-not $wslDockerReady) {
+    throw 'Docker Desktop WSL Integration for Ubuntu is unavailable. Enable Ubuntu in Docker Desktop > Settings > Resources > WSL Integration.'
 }
 
 & wsl.exe -d Ubuntu -- bash -lc 'minikube start --profile=qwen-wsl2-gpu'
-if ($LASTEXITCODE -ne 0) { throw 'Minikube 시작에 실패했습니다.' }
+if ($LASTEXITCODE -ne 0) { throw 'Minikube start failed.' }
 
 & wsl.exe -d Ubuntu -- bash -lc 'kubectl --namespace kube-system rollout status daemonset/nvidia-device-plugin-daemonset --timeout=5m'
-if ($LASTEXITCODE -ne 0) { throw 'NVIDIA device plugin이 준비되지 않았습니다.' }
+if ($LASTEXITCODE -ne 0) { throw 'NVIDIA device plugin is not ready.' }
 
 & wsl.exe -d Ubuntu -- bash -lc 'kubectl --namespace kserve rollout status deployment/kserve-controller-manager --timeout=5m'
-if ($LASTEXITCODE -ne 0) { throw 'KServe controller가 준비되지 않았습니다.' }
+if ($LASTEXITCODE -ne 0) { throw 'KServe controller is not ready.' }
 
 $failedGpuPods = & wsl.exe -d Ubuntu -- bash -lc 'kubectl --namespace qwen-serving get pods --selector=serving.kserve.io/inferenceservice=qwen-vllm-gpu --field-selector=status.phase=Failed --output=name'
-if ($LASTEXITCODE -ne 0) { throw '실패한 GPU Pod 확인에 실패했습니다.' }
+if ($LASTEXITCODE -ne 0) { throw 'Failed to inspect failed GPU Pods.' }
 if ($failedGpuPods) {
     if (-not $RecoverFailedGpuPod) {
-        throw '실패한 GPU Pod가 있습니다. 재생성을 허용하려면 -RecoverFailedGpuPod 옵션으로 다시 실행하세요.'
+        throw 'A failed GPU Pod exists. Run again with -RecoverFailedGpuPod to allow its recreation.'
     }
     & wsl.exe -d Ubuntu -- bash -lc 'kubectl --namespace qwen-serving delete pod --selector=serving.kserve.io/inferenceservice=qwen-vllm-gpu --field-selector=status.phase=Failed'
-    if ($LASTEXITCODE -ne 0) { throw '실패한 GPU Pod 재생성에 실패했습니다.' }
+    if ($LASTEXITCODE -ne 0) { throw 'Failed to recreate the failed GPU Pod.' }
 }
 
 & wsl.exe -d Ubuntu -- bash -lc 'kubectl --namespace qwen-serving wait --for=create pod --selector=serving.kserve.io/inferenceservice=qwen-vllm-gpu --timeout=5m && kubectl --namespace qwen-serving wait --for=condition=Ready pod --selector=serving.kserve.io/inferenceservice=qwen-vllm-gpu --timeout=20m'
-if ($LASTEXITCODE -ne 0) { throw 'Qwen 모델이 준비되지 않았습니다.' }
+if ($LASTEXITCODE -ne 0) { throw 'The Qwen model is not ready.' }
 
 & wsl.exe -d Ubuntu -- bash -lc 'kubectl --namespace qwen-serving wait --for=condition=Ready pod --selector=app=qwen-gateway --timeout=5m'
-if ($LASTEXITCODE -ne 0) { throw 'Gateway가 준비되지 않았습니다.' }
+if ($LASTEXITCODE -ne 0) { throw 'The gateway is not ready.' }
 
 $forward = Get-NetTCPConnection -State Listen -LocalPort 18000 -ErrorAction SilentlyContinue
 if (-not $forward) {
@@ -78,7 +113,7 @@ do {
 } while ((Get-Date) -lt $deadline)
 
 if (-not $response -or $response.StatusCode -ne 200) {
-    throw 'Gateway localhost 포워딩이 준비되지 않았습니다.'
+    throw 'The gateway localhost forwarding is not ready.'
 }
 
 Write-Output 'READY: localhost=http://127.0.0.1:18000 lan=http://<WINDOWS_LAN_IP>:8000'

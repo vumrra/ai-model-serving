@@ -79,7 +79,7 @@ wsl -d Ubuntu -- true; powershell.exe -NoProfile -ExecutionPolicy Bypass -File "
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "\\wsl.localhost\Ubuntu\home\vumrra\Project\qwen-serving-lab\stacks\wsl2-gpu\scripts\start.ps1"
 ```
 
-스크립트가 Docker Desktop을 시작하고 기존 `qwen-wsl2-gpu` Minikube 프로필과 모델을 복구한 뒤 게이트웨이를 Windows localhost `18000`에 연결한다. `-RecoverFailedGpuPod`는 실패한 모델 Pod만 삭제해 ReplicaSet이 다시 만들게 하며 PVC와 모델 캐시는 보존한다. 클러스터를 재설치하거나 Argo CD를 다시 bootstrap하지 않는다.
+스크립트가 Docker Desktop과 Ubuntu WSL Integration을 확인하고, 통합 시작이 실패하면 Docker Desktop을 한 번 재시작한다. 이후 기존 `qwen-wsl2-gpu` Minikube 프로필과 모델을 복구하고 게이트웨이를 Windows localhost `18000`에 연결한다. `-RecoverFailedGpuPod`는 실패한 모델 Pod만 삭제해 ReplicaSet이 다시 만들게 하며 PVC와 모델 캐시는 보존한다. 클러스터를 재설치하거나 Argo CD를 다시 bootstrap하지 않는다.
 
 상태 확인:
 
