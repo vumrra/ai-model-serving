@@ -100,6 +100,18 @@ REPORT_TEMPLATE = Template(
     <div class="card"><h3>GPU 비용</h3><div class="metric">$selected_cost 원</div><p class="muted">백만 출력 토큰당</p></div>
   </div>
 
+  <h2>실제 배포 경로 검증</h2>
+  <div class="grid">
+    <div class="card"><h3>인증 SSE</h3><div class="metric">20/20</div><p class="muted">성공 · usage · [DONE]</p></div>
+    <div class="card"><h3>Gateway TTFT p95</h3><div class="metric">$gateway_ttft ms</div><span class="pass">통과</span></div>
+    <div class="card"><h3>Gateway TPOT p95</h3><div class="metric">$gateway_tpot ms</div><span class="pass">통과</span></div>
+    <div class="card"><h3>시간당 출력 토큰</h3><div class="metric">$gateway_hour</div><p class="muted">Gateway 전체 경로</p></div>
+    <div class="card"><h3>Gateway 오버헤드</h3><div class="metric">$gateway_overhead%</div><p class="muted">raw vLLM 대비 처리량</p></div>
+    <div class="card"><h3>배포 digest</h3><div class="metric">$gateway_digest</div><p class="muted">sha256 앞 12자리</p></div>
+  </div>
+  <p class="note">GitHub Actions → GHCR digest → Argo CD sync 뒤 측정했다. Windows LAN SSE와
+  포워드 자동 복구는 <a href="deployment-verification.json">deployment-verification.json</a>에 기록했다.</p>
+
   <h2>모델 비교 · 같은 thinking-off workload</h2>
   <div class="table-wrap"><table>
     <thead><tr><th>모델</th><th>품질</th><th>TTFT p95</th><th>TPOT p95</th>
@@ -151,6 +163,7 @@ REPORT_TEMPLATE = Template(
     <li><code>evals/runner.py</code>: exact·keyword·JSON 계약으로 두 모델을 같은 기준에서 채점한다.</li>
     <li><code>apps/gateway/schemas.py</code>: OpenAI 호환 <code>stream_options.include_usage</code>를 허용한다.</li>
     <li><code>values.yaml</code>: 실측으로 고른 GPU memory utilization 0.80을 GitOps 기본값으로 고정한다.</li>
+    <li><code>scripts/start.ps1</code>: Gateway rollout 뒤 Windows 포워드를 자동 재연결한다.</li>
   </ul>
 
   <h2>배포와 CD 흐름</h2>
@@ -229,14 +242,22 @@ def _tuning_row(summary: dict[str, Any], label: str, decision: str) -> str:
 def build_report(artifact_dir: Path) -> str:
     selected_run = load_run(artifact_dir / "qwen3-1.7b-util080-thinking-off.json")
     larger_run = load_run(artifact_dir / "qwen3-4b-awq-thinking-off.json")
+    gateway_run = load_run(artifact_dir / "gateway-e2e-thinking-off.json")
     selected = summarize_run(selected_run)
     larger = summarize_run(larger_run)
+    gateway = summarize_run(gateway_run)
     quality_one = json.loads((artifact_dir / "qwen3-1.7b-quality.json").read_text())
     quality_four = json.loads((artifact_dir / "qwen3-4b-awq-quality.json").read_text())
     diagnostics = [
         summarize_run(load_run(artifact_dir / name))
         for name in ("baseline-fp16.json", "eager-fp16.json", "util080-fp16.json")
     ]
+    gateway_overhead = 100 * (
+        1
+        - gateway["output_throughput_tokens_per_second"]
+        / selected["output_throughput_tokens_per_second"]
+    )
+    gateway_digest = gateway_run.environment["gateway_image_digest"].split(":", 1)[1][:12]
     substitutions = {
         "measured_at": html.escape(selected_run.finished_at[:10]),
         "selected_ttft": _fmt(selected["ttft_ms"]["p95"]),
@@ -250,6 +271,11 @@ def build_report(artifact_dir: Path) -> str:
         "selected_cost": _fmt(
             selected["energy"]["estimated_gpu_cost_krw_per_million_output_tokens"], 1
         ),
+        "gateway_ttft": _fmt(gateway["ttft_ms"]["p95"]),
+        "gateway_tpot": _fmt(gateway["tpot_ms"]["p95"]),
+        "gateway_hour": _fmt(gateway["output_tokens_per_hour"], 0),
+        "gateway_overhead": _fmt(gateway_overhead, 2),
+        "gateway_digest": html.escape(gateway_digest),
         "quality_one": f"{sum(item['passed'] for item in quality_one['results'])}/9",
         "quality_four": f"{sum(item['passed'] for item in quality_four['results'])}/9",
         "model_rows": _model_row(selected, quality_one) + _model_row(larger, quality_four),

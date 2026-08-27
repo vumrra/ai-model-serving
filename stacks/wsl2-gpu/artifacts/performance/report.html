@@ -82,6 +82,18 @@
     <div class="card"><h3>GPU 비용</h3><div class="metric">264.5 원</div><p class="muted">백만 출력 토큰당</p></div>
   </div>
 
+  <h2>실제 배포 경로 검증</h2>
+  <div class="grid">
+    <div class="card"><h3>인증 SSE</h3><div class="metric">20/20</div><p class="muted">성공 · usage · [DONE]</p></div>
+    <div class="card"><h3>Gateway TTFT p95</h3><div class="metric">482.7 ms</div><span class="pass">통과</span></div>
+    <div class="card"><h3>Gateway TPOT p95</h3><div class="metric">90.6 ms</div><span class="pass">통과</span></div>
+    <div class="card"><h3>시간당 출력 토큰</h3><div class="metric">37,259</div><p class="muted">Gateway 전체 경로</p></div>
+    <div class="card"><h3>Gateway 오버헤드</h3><div class="metric">0.53%</div><p class="muted">raw vLLM 대비 처리량</p></div>
+    <div class="card"><h3>배포 digest</h3><div class="metric">e4e2fa58031d</div><p class="muted">sha256 앞 12자리</p></div>
+  </div>
+  <p class="note">GitHub Actions → GHCR digest → Argo CD sync 뒤 측정했다. Windows LAN SSE와
+  포워드 자동 복구는 <a href="deployment-verification.json">deployment-verification.json</a>에 기록했다.</p>
+
   <h2>모델 비교 · 같은 thinking-off workload</h2>
   <div class="table-wrap"><table>
     <thead><tr><th>모델</th><th>품질</th><th>TTFT p95</th><th>TPOT p95</th>
@@ -133,6 +145,7 @@
     <li><code>evals/runner.py</code>: exact·keyword·JSON 계약으로 두 모델을 같은 기준에서 채점한다.</li>
     <li><code>apps/gateway/schemas.py</code>: OpenAI 호환 <code>stream_options.include_usage</code>를 허용한다.</li>
     <li><code>values.yaml</code>: 실측으로 고른 GPU memory utilization 0.80을 GitOps 기본값으로 고정한다.</li>
+    <li><code>scripts/start.ps1</code>: Gateway rollout 뒤 Windows 포워드를 자동 재연결한다.</li>
   </ul>
 
   <h2>배포와 CD 흐름</h2>

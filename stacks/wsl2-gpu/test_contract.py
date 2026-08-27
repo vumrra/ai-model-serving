@@ -251,5 +251,7 @@ def test_performance_report_is_reproducible(tmp_path: Path) -> None:
     assert "GTX 1660 LLM 서빙 실측 보고서" in report
     assert "시간당 출력 토큰" in report
     assert "원/백만 출력 토큰" in report
+    assert "실제 배포 경로 검증" in report
+    assert "37,259" in report
     assert "qwen3-1.7b" in report
     assert "qwen3-4b-awq" in report

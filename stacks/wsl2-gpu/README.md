@@ -157,6 +157,7 @@ task -d stacks/wsl2-gpu perf-report
 - 출력 10.41 tok/s, 시간당 37,458 output tokens
 - VRAM peak 5,565MiB, GPU 전력 평균 49.5W
 - GPU 전력 기준 약 264.5원/백만 output tokens (200원/kWh 가정)
+- 실제 Gateway 경로 20/20 성공, 시간당 37,259 output tokens, raw 대비 처리량 오버헤드 0.53%
 
 상세 비교와 판단 근거는 [GTX 1660 LLM 서빙 실측 보고서](artifacts/performance/report.html)에 있다.
 

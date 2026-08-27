@@ -98,7 +98,7 @@ $forward = Get-NetTCPConnection -State Listen -LocalPort 18000 -ErrorAction Sile
 if (-not $forward) {
     $logDirectory = Join-Path $env:LOCALAPPDATA 'qwen-serving'
     New-Item -ItemType Directory -Force -Path $logDirectory | Out-Null
-    $arguments = '-d Ubuntu -- bash -lc "exec kubectl --namespace qwen-serving port-forward --address 127.0.0.1 service/qwen-gateway 18000:80"'
+    $arguments = '-d Ubuntu -- bash -lc "while true; do kubectl --namespace qwen-serving port-forward --address 127.0.0.1 service/qwen-gateway 18000:80; sleep 2; done"'
     Start-Process -FilePath "$env:WINDIR\System32\wsl.exe" -ArgumentList $arguments -WindowStyle Hidden `
         -RedirectStandardOutput (Join-Path $logDirectory 'gateway-forward.out.log') `
         -RedirectStandardError (Join-Path $logDirectory 'gateway-forward.err.log')

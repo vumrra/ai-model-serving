@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "verified_at": "2026-08-27T16:05:09Z",
+  "source_commit": "fc4925f28f8bf1e473f90702881728461b696ba6",
+  "gitops_commit": "3872488ab1e1a26b7c5fea7cc275dd4830a77bf6",
+  "gateway_image": "ghcr.io/vumrra/ai-model-serving/gateway@sha256:e4e2fa58031d4e4c63d4375eb309eecd4d85fa306ac441aec516ef449442e248",
+  "argo": {
+    "root": "Synced/Healthy",
+    "gateway": "Synced/Healthy",
+    "model": "Synced/Healthy",
+    "operation": "Succeeded"
+  },
+  "gateway_benchmark": {
+    "artifact": "gateway-e2e-thinking-off.json",
+    "requests": 20,
+    "success_rate": 1.0,
+    "slo_pass": true
+  },
+  "windows_lan_api": {
+    "endpoint": "http://<windows-lan-ip>:8000",
+    "ready_status": 200,
+    "chat_status": 200,
+    "content_type": "text/event-stream",
+    "usage_seen": true,
+    "done_seen": true,
+    "thinking_seen": false
+  },
+  "forward_recovery": {
+    "method": "terminate port-forward child and wait for wrapper restart",
+    "replacement_started": true,
+    "ready_status": 200
+  }
+}

@@ -18,6 +18,8 @@ def test_windows_start_and_lan_exposure_are_gateway_only() -> None:
     assert "--field-selector=status.phase=Failed" in start
     assert "service/qwen-gateway 18000:80" in start
     assert "--address 127.0.0.1" in start
+    assert "while true; do kubectl" in start
+    assert "sleep 2; done" in start
     assert "listenport=8000" in install
     assert "connectaddress=127.0.0.1" in install
     assert "connectport=18000" in install
