@@ -106,7 +106,8 @@ REPORT_TEMPLATE = Template(
     <div class="card"><h3>Gateway TTFT p95</h3><div class="metric">$gateway_ttft ms</div><span class="pass">통과</span></div>
     <div class="card"><h3>Gateway TPOT p95</h3><div class="metric">$gateway_tpot ms</div><span class="pass">통과</span></div>
     <div class="card"><h3>시간당 출력 토큰</h3><div class="metric">$gateway_hour</div><p class="muted">Gateway 전체 경로</p></div>
-    <div class="card"><h3>Gateway 오버헤드</h3><div class="metric">$gateway_overhead%</div><p class="muted">raw vLLM 대비 처리량</p></div>
+    <div class="card"><h3>관측 처리량 차이</h3><div class="metric">$gateway_overhead%</div><p class="muted">raw 대비 · 단일 실행</p></div>
+    <div class="card"><h3>Gateway GPU 비용</h3><div class="metric">$gateway_cost 원</div><p class="muted">백만 출력 토큰당</p></div>
     <div class="card"><h3>배포 digest</h3><div class="metric">$gateway_digest</div><p class="muted">sha256 앞 12자리</p></div>
   </div>
   <p class="note">GitHub Actions → GHCR digest → Argo CD sync 뒤 측정했다. Windows LAN SSE와
@@ -275,6 +276,9 @@ def build_report(artifact_dir: Path) -> str:
         "gateway_tpot": _fmt(gateway["tpot_ms"]["p95"]),
         "gateway_hour": _fmt(gateway["output_tokens_per_hour"], 0),
         "gateway_overhead": _fmt(gateway_overhead, 2),
+        "gateway_cost": _fmt(
+            gateway["energy"]["estimated_gpu_cost_krw_per_million_output_tokens"], 1
+        ),
         "gateway_digest": html.escape(gateway_digest),
         "quality_one": f"{sum(item['passed'] for item in quality_one['results'])}/9",
         "quality_four": f"{sum(item['passed'] for item in quality_four['results'])}/9",
