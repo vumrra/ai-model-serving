@@ -12,12 +12,19 @@ class ChatMessage(BaseModel):
     content: str = Field(min_length=1, max_length=32_000)
 
 
+class StreamOptions(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    include_usage: bool = False
+
+
 class ChatCompletionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     model: str = Field(min_length=1, max_length=200)
     messages: list[ChatMessage] = Field(min_length=1)
     stream: bool = False
+    stream_options: StreamOptions | None = None
     max_tokens: int = Field(default=256, ge=1, le=32_768)
     temperature: float = Field(default=0.7, ge=0.0, le=2.0)
     top_p: float = Field(default=0.8, gt=0.0, le=1.0)

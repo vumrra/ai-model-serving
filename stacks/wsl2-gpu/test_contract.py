@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 from pathlib import Path
 
 import yaml
@@ -74,7 +75,7 @@ def test_wsl2_gpu_contract() -> None:
         "--max-num-seqs",
         "1",
         "--gpu-memory-utilization",
-        "0.85",
+        "0.80",
         "--swap-space",
         "0",
         "--served-model-name",
@@ -227,3 +228,28 @@ def test_post_sync_smoke_uses_the_gateway_digest_and_secret() -> None:
     assert job["metadata"]["annotations"]["argocd.argoproj.io/hook"] == "PostSync"
     assert container["image"] == "ghcr.io/vumrra/ai-model-serving/gateway@sha256:testdigest"
     assert container["env"][0]["valueFrom"]["secretKeyRef"]["name"] == ("qwen-gateway-api-key")
+
+
+def test_performance_report_is_reproducible(tmp_path: Path) -> None:
+    output = tmp_path / "report.html"
+    subprocess.run(
+        [
+            sys.executable,
+            str(STACK / "report.py"),
+            "--artifacts",
+            str(STACK / "artifacts/performance"),
+            "--output",
+            str(output),
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    report = output.read_text(encoding="utf-8")
+    assert "GTX 1660 LLM 서빙 실측 보고서" in report
+    assert "시간당 출력 토큰" in report
+    assert "원/백만 출력 토큰" in report
+    assert "qwen3-1.7b" in report
+    assert "qwen3-4b-awq" in report

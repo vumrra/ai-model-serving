@@ -5,9 +5,9 @@ import asyncio
 import json
 import os
 import platform
-import socket
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from dataclasses import dataclass
@@ -25,6 +25,83 @@ from benchmarks.schema import BenchmarkRun, RequestResult
 class RequestCase:
     prompt_id: str
     payload: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class GpuSample:
+    power_w: float
+    memory_used_mib: float
+    utilization_pct: float
+
+
+class NvidiaSmiSampler:
+    """Collect GPU telemetry with one long-lived nvidia-smi process."""
+
+    def __init__(self, interval_ms: int = 500) -> None:
+        self.interval_ms = interval_ms
+        self.samples: list[GpuSample] = []
+        self._process: subprocess.Popen[str] | None = None
+        self._thread: threading.Thread | None = None
+
+    def start(self) -> None:
+        command = [
+            "nvidia-smi",
+            "--query-gpu=power.draw,memory.used,utilization.gpu",
+            "--format=csv,noheader,nounits",
+            f"--loop-ms={self.interval_ms}",
+        ]
+        try:
+            self._process = subprocess.Popen(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                bufsize=1,
+            )
+        except (FileNotFoundError, subprocess.SubprocessError):
+            return
+        self._thread = threading.Thread(target=self._collect, daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        if self._process is None:
+            return
+        self._process.terminate()
+        try:
+            self._process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            self._process.kill()
+            self._process.wait(timeout=2)
+        if self._thread is not None:
+            self._thread.join(timeout=2)
+
+    def _collect(self) -> None:
+        if self._process is None or self._process.stdout is None:
+            return
+        for line in self._process.stdout:
+            values = [value.strip() for value in line.split(",")]
+            if len(values) != 3:
+                continue
+            try:
+                self.samples.append(GpuSample(*(float(value) for value in values)))
+            except ValueError:
+                continue
+
+    def summary(self) -> dict[str, float | int | None]:
+        if not self.samples:
+            return {
+                "gpu_samples": 0,
+                "gpu_power_w_mean": None,
+                "gpu_memory_used_mib_peak": None,
+                "gpu_utilization_pct_mean": None,
+            }
+        return {
+            "gpu_samples": len(self.samples),
+            "gpu_power_w_mean": sum(sample.power_w for sample in self.samples) / len(self.samples),
+            "gpu_memory_used_mib_peak": max(sample.memory_used_mib for sample in self.samples),
+            "gpu_utilization_pct_mean": sum(sample.utilization_pct for sample in self.samples)
+            / len(self.samples),
+        }
 
 
 class TruncatedStreamError(RuntimeError):
@@ -180,7 +257,8 @@ async def execute(
     endpoint: str,
     workload: dict[str, Any],
     api_key: str | None,
-) -> list[RequestResult]:
+    gpu_sampler: NvidiaSmiSampler | None = None,
+) -> tuple[list[RequestResult], float]:
     execution = workload.get("execution", {})
     timeout = float(execution.get("timeout_seconds", 90))
     concurrency = max(1, int(execution.get("concurrency", 1)))
@@ -204,14 +282,22 @@ async def execute(
             async with semaphore:
                 return await run_case(client, endpoint, case, headers)
 
-        return await asyncio.gather(*(bounded(case) for case in cases))
+        if gpu_sampler is not None:
+            gpu_sampler.start()
+        measurement_started = time.perf_counter()
+        try:
+            results = await asyncio.gather(*(bounded(case) for case in cases))
+        finally:
+            duration_seconds = time.perf_counter() - measurement_started
+            if gpu_sampler is not None:
+                gpu_sampler.stop()
+        return results, duration_seconds
 
 
 def collect_environment(labels: list[str]) -> dict[str, Any]:
     environment: dict[str, Any] = {
         "python": platform.python_version(),
         "platform": platform.platform(),
-        "hostname": socket.gethostname(),
     }
     for name in ("RUN_IMAGE_DIGEST", "CUDA_VERSION", "NVIDIA_VISIBLE_DEVICES"):
         if value := os.getenv(name):
@@ -228,7 +314,7 @@ def collect_environment(labels: list[str]) -> dict[str, Any]:
 def _gpu_environment() -> dict[str, Any]:
     command = [
         "nvidia-smi",
-        "--query-gpu=name,uuid,driver_version,memory.total",
+        "--query-gpu=name,driver_version,memory.total",
         "--format=csv,noheader,nounits",
     ]
     try:
@@ -265,13 +351,18 @@ def main(argv: list[str] | None = None) -> int:
         raise ValueError("model must be set in workload defaults or --model")
 
     started_at = utc_now()
-    results = asyncio.run(
+    gpu_sampler = NvidiaSmiSampler()
+    results, duration_seconds = asyncio.run(
         execute(
             endpoint=args.endpoint,
             workload=workload,
             api_key=os.getenv(args.api_key_env),
+            gpu_sampler=gpu_sampler,
         )
     )
+    environment = collect_environment(args.label)
+    environment["benchmark_duration_seconds"] = duration_seconds
+    environment.update(gpu_sampler.summary())
     run = BenchmarkRun(
         schema_version=1,
         run_id=uuid.uuid4().hex,
@@ -282,7 +373,7 @@ def main(argv: list[str] | None = None) -> int:
         workload=workload["name"],
         started_at=started_at,
         finished_at=utc_now(),
-        environment=collect_environment(args.label),
+        environment=environment,
         results=results,
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)

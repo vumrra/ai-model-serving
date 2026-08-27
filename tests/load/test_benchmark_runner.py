@@ -7,6 +7,8 @@ from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
 
 from benchmarks.runner import (
+    GpuSample,
+    NvidiaSmiSampler,
     RequestCase,
     collect_environment,
     expand_cases,
@@ -22,7 +24,10 @@ def test_gpu_smoke_covers_json_and_sse(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert [case.payload["stream"] for case in cases] == [False, True]
     assert all(case.payload["model"] == "Qwen/Qwen3-4B" for case in cases)
-    assert collect_environment([])["run_image_digest"].endswith("a" * 64)
+    environment = collect_environment([])
+    assert environment["run_image_digest"].endswith("a" * 64)
+    assert "hostname" not in environment
+    assert all("GPU-" not in item for item in environment.get("gpu") or [])
 
 
 @pytest.mark.asyncio
@@ -87,3 +92,18 @@ async def test_runner_rejects_truncated_sse() -> None:
 
     assert result.success is False
     assert result.error == "truncated_stream"
+
+
+def test_gpu_sampler_summary() -> None:
+    sampler = NvidiaSmiSampler()
+    sampler.samples = [
+        GpuSample(power_w=40.0, memory_used_mib=5000.0, utilization_pct=80.0),
+        GpuSample(power_w=50.0, memory_used_mib=5500.0, utilization_pct=100.0),
+    ]
+
+    assert sampler.summary() == {
+        "gpu_samples": 2,
+        "gpu_power_w_mean": 45.0,
+        "gpu_memory_used_mib_peak": 5500.0,
+        "gpu_utilization_pct_mean": 90.0,
+    }

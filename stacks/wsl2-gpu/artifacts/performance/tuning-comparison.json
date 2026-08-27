@@ -1,0 +1,161 @@
+[
+  {
+    "run_id": "e67c2ed9b9394202ac34f8681389db22",
+    "engine": "vllm-v0.8.5-kserve-raw",
+    "model": "qwen3-1.7b",
+    "workload": "wsl2-chat-single",
+    "requests": 20,
+    "success_rate": 1.0,
+    "ttft_ms": {
+      "mean": 399.6429711500241,
+      "p50": 464.2116295035521,
+      "p95": 475.0578099487029,
+      "p99": 478.10335718975693
+    },
+    "tpot_ms": {
+      "mean": 89.03129958809933,
+      "p50": 89.03897702377492,
+      "p95": 89.90452247461589,
+      "p99": 90.02657579652141
+    },
+    "e2e_ms": {
+      "mean": 6008.614845200282,
+      "p50": 6034.700940497714,
+      "p95": 6122.705644851885,
+      "p99": 6143.008525770783
+    },
+    "tokens": {
+      "prompt": 676,
+      "completion": 1280,
+      "usage_coverage": 1.0
+    },
+    "output_throughput_tokens_per_second": 10.65130977368512,
+    "output_tokens_per_hour": 38344.71518526643,
+    "goodput_requests_per_second": 0.16642671521383,
+    "slo": {
+      "ttft_p95_ms": 1000.0,
+      "tpot_p95_ms": 100.0,
+      "gpu_peak_mib": null,
+      "pass": true
+    },
+    "gpu": {
+      "samples": 239,
+      "power_w_mean": 48.93138075313808,
+      "memory_used_mib_peak": 5863.0,
+      "utilization_pct_mean": 98.0836820083682
+    },
+    "energy": {
+      "estimated_gpu_energy_wh": 1.6333976419280463,
+      "gpu_wh_per_1k_output_tokens": 1.2760919077562862,
+      "estimated_gpu_cost_krw_per_million_output_tokens": 255.21838155125724,
+      "assumed_electricity_krw_per_kwh": 200.0,
+      "output_tps_for_estimate": 10.65130977368512
+    }
+  },
+  {
+    "run_id": "ddbab62ed3bb45afad8c1010f17dd547",
+    "engine": "vllm-v0.8.5-kserve-raw",
+    "model": "qwen3-1.7b",
+    "workload": "wsl2-chat-single",
+    "requests": 20,
+    "success_rate": 1.0,
+    "ttft_ms": {
+      "mean": 324.3850624996412,
+      "p50": 384.8318174968881,
+      "p95": 396.4651224472618,
+      "p99": 396.92292289299075
+    },
+    "tpot_ms": {
+      "mean": 90.71909886032887,
+      "p50": 90.74237884926825,
+      "p95": 91.45458715959519,
+      "p99": 91.51182868273094
+    },
+    "e2e_ms": {
+      "mean": 6039.68829070036,
+      "p50": 6062.812728498102,
+      "p95": 6147.564792452613,
+      "p99": 6154.557893687161
+    },
+    "tokens": {
+      "prompt": 676,
+      "completion": 1280,
+      "usage_coverage": 1.0
+    },
+    "output_throughput_tokens_per_second": 10.596503179112705,
+    "output_tokens_per_hour": 38147.41144480574,
+    "goodput_requests_per_second": 0.16557036217363602,
+    "slo": {
+      "ttft_p95_ms": 1000.0,
+      "tpot_p95_ms": 100.0,
+      "gpu_peak_mib": null,
+      "pass": true
+    },
+    "gpu": {
+      "samples": 241,
+      "power_w_mean": 48.73414937759336,
+      "memory_used_mib_peak": 5824.0,
+      "utilization_pct_mean": 96.60995850622406
+    },
+    "energy": {
+      "estimated_gpu_energy_wh": 1.6352278920307526,
+      "gpu_wh_per_1k_output_tokens": 1.2775217906490255,
+      "estimated_gpu_cost_krw_per_million_output_tokens": 255.5043581298051,
+      "assumed_electricity_krw_per_kwh": 200.0,
+      "output_tps_for_estimate": 10.596503179112705
+    }
+  },
+  {
+    "run_id": "94a3ddcb843840bcb63cf9bf0103d33c",
+    "engine": "vllm-v0.8.5-kserve-raw",
+    "model": "qwen3-1.7b",
+    "workload": "wsl2-chat-single",
+    "requests": 20,
+    "success_rate": 1.0,
+    "ttft_ms": {
+      "mean": 402.63209304976044,
+      "p50": 468.5698679968482,
+      "p95": 482.67503665229015,
+      "p99": 482.9004473293753
+    },
+    "tpot_ms": {
+      "mean": 89.42316562936449,
+      "p50": 89.48087870637195,
+      "p95": 89.79519772144576,
+      "p99": 89.84881209029741
+    },
+    "e2e_ms": {
+      "mean": 6036.291527699723,
+      "p50": 6082.911837998836,
+      "p95": 6129.8018967485405,
+      "p99": 6133.856295351579
+    },
+    "tokens": {
+      "prompt": 676,
+      "completion": 1280,
+      "usage_coverage": 1.0
+    },
+    "output_throughput_tokens_per_second": 10.60246698953418,
+    "output_tokens_per_hour": 38168.88116232305,
+    "goodput_requests_per_second": 0.16566354671147157,
+    "slo": {
+      "ttft_p95_ms": 1000.0,
+      "tpot_p95_ms": 100.0,
+      "gpu_peak_mib": 5632.0,
+      "pass": true
+    },
+    "gpu": {
+      "samples": 241,
+      "power_w_mean": 49.70780082987552,
+      "memory_used_mib_peak": 5576.0,
+      "utilization_pct_mean": 98.02489626556017
+    },
+    "energy": {
+      "estimated_gpu_energy_wh": 1.6669596573096992,
+      "gpu_wh_per_1k_output_tokens": 1.3023122322732026,
+      "estimated_gpu_cost_krw_per_million_output_tokens": 260.46244645464054,
+      "assumed_electricity_krw_per_kwh": 200.0,
+      "output_tps_for_estimate": 10.60246698953418
+    }
+  }
+]

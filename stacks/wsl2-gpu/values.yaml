@@ -18,7 +18,7 @@ runtime:
     - --max-num-seqs
     - "1"
     - --gpu-memory-utilization
-    - "0.85"
+    - "0.80"
     - --swap-space
     - "0"
     - --served-model-name
