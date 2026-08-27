@@ -254,5 +254,7 @@ def test_performance_report_is_reproducible(tmp_path: Path) -> None:
     assert "실제 배포 경로 검증" in report
     assert "37,259" in report
     assert "265.1" in report
+    assert "MLOps/sglang.md" in report
+    assert "JaeoneLim/nano-kpu" in report
     assert "qwen3-1.7b" in report
     assert "qwen3-4b-awq" in report
