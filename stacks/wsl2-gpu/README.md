@@ -6,6 +6,31 @@ Qwen3-1.7B FP16을 WSL2의 Minikube/KServe에서 API로 서빙한다.
 Client -> Windows TCP 8000 -> FastAPI Gateway -> KServe -> vLLM -> Qwen3-1.7B
 ```
 
+## 최종 추천
+
+| 목적 | 설정 | 실측 판단 |
+| --- | --- | --- |
+| 기본 API | Qwen3-1.7B FP16, `max-num-seqs=1` | TTFT p95 225.9ms, TPOT p95 92.7ms, 10.61 tok/s. 단일 GPU 대화형 기본값 |
+| 두 사용자 처리량 | 같은 모델, `max-num-seqs=2` | aggregate 중앙 16.21 tok/s. TPOT p95 121.6ms로 100ms gate를 넘으므로 선택 프로파일 |
+| 모델 용량 우선 | Qwen3-4B AWQ 실험 | 3-run 중앙 5.58 tok/s, TPOT p95 173.1ms. 대화형 TPOT 100ms gate는 실패했고, 원본 5,888MiB label은 legacy 계산 오류라 변조하지 않고, reserved 178MiB를 반영한 corrected used≤5,710MiB·free≥256MiB gate로 3/3 재계산 통과. 30-case 17/30으로 1.7B의 18/30보다 품질 우위는 확인되지 않음 |
+
+기본 배포는 1.7B FP16/seq1이다. seq2는 동시에 두 요청을 처리해야 하고 느린 토큰 간격을 허용할 때만 사용한다. 4B AWQ는 더 큰 파라미터 수 자체가 필요한 경우의 실험 후보이며 기본 배포를 대체하지 않는다.
+
+6GB 경계는 먼저 산술로 거른다. 4B FP16 ideal weights는 7,629MiB라 적재하지 않았다. 8B AWQ도 4B에서 관측한 non-weight envelope 약 3,429MiB와 ideal packed weights 약 3,815MiB를 합치면 반올림 전 기준 약 7,243MiB로 추론되어 기각했으며, 실제 load test는 실행하지 않았다.
+
+서비스는 API only다. Open WebUI를 배포하지 않으며 외부에는 API key·rate limit·검증을 거치는 Gateway TCP 8000만 연다. Kubernetes API, Argo CD, Dashboard, vLLM 원본 API는 localhost에 남긴다.
+
+## KServe 제어면 residual risk
+
+이전 관측의 etcd `fdatasync` 최대는 3.891초였고, 최근 24시간 cluster live log에서는 최대 7.826초와 재시작 직전 7.517초를 확인했다. 약 3초 안에 manager와 storage-provisioner가 함께 종료됐다. 이 증거는 성능 study JSON이 아니라 live log의 시간 상관관계다. WSL 디스크 지연 → etcd commit stall → API timeout → lease 갱신 실패가 가장 일관된 해석이지만 단독 인과를 증명하지 않는다.
+
+- read-only 확인에서 etcd dataDir은 `/var/lib/minikube/etcd`, Docker node의 `/var`는 `/dev/sdd`였다. 디렉터리 256MiB 중 WAL 245MiB, snapshot DB 12MiB였고 disk pressure는 false였다. 작은 DB와 pressure 부재는 용량 고갈·대형 DB 가설을 약화하고 storage path 지연 가설을 지지하지만 인과를 확정하지 않는다.
+- controller CPU는 request 100m, limit 500m다. 500m limit은 burst 상한을 완화해 CPU throttling 가능성을 낮추려는 조치일 뿐, etcd persistence의 근본 해결이 아니며 사건 완화 효과도 검증되지 않았다.
+- 잘못된 autoscaler class는 효과가 없어 HPA가 생성됐고 `autoscalerClass: none`으로 바로잡았다. 불필요한 HPA reconcile과 etcd write가 줄 수 있다는 것은 해석이며, 실제 감소량과 재시작 완화 효과는 측정하지 않았다.
+- WSL 가상 디스크와 단일 노드 etcd가 남아 있으므로 controller 재시작 위험은 0이 아니다. 재발 시 restart 수만 보지 말고 fsync 지연, API timeout, lease-renew 실패의 시간 순서를 함께 본다.
+- 다음 gate는 [etcd metrics](https://etcd.io/docs/v3.6/metrics/)의 `wal_fsync_duration_seconds` p99 계측과 [etcd tuning](https://etcd.io/docs/v3.7/tuning/)에 따른 SSD/저지연 storage A/B다.
+- autoscaler 계약은 [KServe HPA Autoscaler 공식 문서](https://kserve.github.io/website/docs/model-serving/predictive-inference/autoscaling/hpa-autoscaler)를 기준으로 한다.
+
 ## 고정 사양
 
 - GPU: GTX 1660 6GB, `nvidia.com/gpu: 1`
@@ -13,7 +38,7 @@ Client -> Windows TCP 8000 -> FastAPI Gateway -> KServe -> vLLM -> Qwen3-1.7B
 - 모델 리비전: `70d244cc...b1ad5e`
 - FP16, 컨텍스트 1024, 시퀀스 1, GPU 메모리 사용률 0.75, prefix caching 활성
 - WSL2 메모리 10GB, swap 4GB, Minikube 메모리 8GB
-- Web UI, 양자화, CPU 오프로딩, Knative, Istio 없음
+- 기본 배포에는 Web UI, 양자화, CPU 오프로딩, Knative, Istio 없음. 4B AWQ는 용량 비교 실험에만 사용
 
 ## 최초 1회 설정
 
@@ -147,20 +172,27 @@ API 주소는 `http://<WINDOWS_LAN_IP>:8000/v1`이다. 모든 요청에 기존 G
 task -d stacks/wsl2-gpu kserve-forward
 
 PERF_RUN_ID=run4 task -d stacks/wsl2-gpu perf-benchmark
+task -d stacks/wsl2-gpu perf-soak
 task -d stacks/wsl2-gpu perf-quality
 task -d stacks/wsl2-gpu perf-startup
 task -d stacks/wsl2-gpu perf-report
 ```
 
-`PERF_RUN_ID`를 생략하면 benchmark는 `latest`에 저장된다. 품질 점수가 만점이 아니어도 30개 결과와 Wilson 95% 신뢰구간을 저장하며, startup Task는 원본 Pod JSON을 남기지 않는다.
+`PERF_RUN_ID`를 생략하면 benchmark는 `latest`에 저장된다. `perf-soak`은 최종 Qwen3-1.7B FP16 / util 0.75 / prefix-on 서비스에 약 33분간 부하를 발생시키며, 현재 endpoint에 실제 요청이 흐르는 점을 확인한 뒤 실행한다. 품질 점수가 만점이 아니어도 30개 결과와 Wilson 95% 신뢰구간을 저장하며, startup Task는 원본 Pod JSON을 남기지 않는다.
 
 주요 artifact:
 
-- 최종 단기 성능 3회: [run1](artifacts/performance/study/qwen3-1.7b-fp16-util075-short-c1-run1.json), [run2](artifacts/performance/study/qwen3-1.7b-fp16-util075-short-c1-run2.json), [run3](artifacts/performance/study/qwen3-1.7b-fp16-util075-short-c1-run3.json)
+- 최종 1.7B 단기 3회: [run1](artifacts/performance/study/qwen3-1.7b-fp16-util075-short-c1-run1.json), [run2](artifacts/performance/study/qwen3-1.7b-fp16-util075-short-c1-run2.json), [run3](artifacts/performance/study/qwen3-1.7b-fp16-util075-short-c1-run3.json)
+- seq1/seq2 C2: [seq1](artifacts/performance/study/qwen3-1.7b-fp16-util075-seq1-short-c2.json), [seq2 run1](artifacts/performance/study/qwen3-1.7b-fp16-util075-seq2-short-c2.json), [run2](artifacts/performance/study/qwen3-1.7b-fp16-util075-seq2-short-c2-run2.json), [run3](artifacts/performance/study/qwen3-1.7b-fp16-util075-seq2-short-c2-run3.json)
+- 1.7B 품질·시작: [quality 30](artifacts/performance/study/qwen3-1.7b-fp16-quality-30.json), [warm startup](artifacts/performance/study/startup-qwen3-1.7b-util075-prefix-on.json)
+- 4B AWQ 용량 실험: [run1](artifacts/performance/study/qwen3-4b-awq-util075-short-c1-run1.json), [run2](artifacts/performance/study/qwen3-4b-awq-util075-short-c1-run2.json), [run3](artifacts/performance/study/qwen3-4b-awq-util075-short-c1-run3.json), [quality 30](artifacts/performance/study/qwen3-4b-awq-util075-quality-30.json)
+- 4B sampler lifecycle 대조: [sampler-primed 20](artifacts/performance/study/qwen3-4b-awq-util075-sampler-primed-20.json). 변경 조건에서도 결과가 일관됐지만 원인이나 해결로 확정하지 않는다.
+- historical 30-case 품질 JSON은 case ID/order만 남아 revision·suite SHA·실행 시각·serving config를 artifact 단독으로 감사할 수 없다. 따라서 방향성 근거일 뿐 모델 선택의 단독 근거로 쓰지 않는다. 다음 재실행은 revision·config ID·suite SHA metadata를 함께 남긴다.
+- 최종 1.7B soak·no-sampler 대조: [360-request soak](artifacts/performance/study/qwen3-1.7b-fp16-util075-final-soak-c1.json)는 360/360 성공, 32m41s measurement, aggregate SLO 통과·개별 358/360이다. [no-sampler 20](artifacts/performance/study/qwen3-1.7b-fp16-util075-no-sampler-20.json)은 20/20 성공했지만 작은 표본이므로 계측 인과를 확정하지 않는다. 별도 [control-plane 관찰 32m56s](artifacts/performance/study/kserve-control-plane-soak.md)도 함께 본다.
 - 공유 prefix: [prefix-on 결과](artifacts/performance/study/qwen3-1.7b-fp16-util075-shared-prefix-on-c1.json)
-- 품질 30개: [quality 결과](artifacts/performance/study/qwen3-1.7b-fp16-quality-30.json)
-- warm startup: [startup 결과](artifacts/performance/study/startup-qwen3-1.7b-util075-prefix-on.json)
 - 상세 판단: [GTX 1660 LLM 서빙 실측 보고서](artifacts/performance/report.html)
+
+artifact에는 요청별 latency·usage와 품질 규칙/hash만 저장하며 raw prompt·응답·API key는 저장하지 않는다.
 
 ## 관리 화면
 

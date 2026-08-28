@@ -1,19 +1,29 @@
 # Qwen Serving Lab
 
-Qwen 모델을 API로 제공하고, Transformers·vLLM·SGLang을 같은 조건에서 비교한 뒤 실제 배포와 롤백까지 경험하는 프로젝트입니다.
+Qwen 모델을 API로 제공하고, 실제 배포·성능 검증·GitOps 롤백까지 다루는 모델 서빙 실습 저장소입니다.
 
-현재 로컬 수직 슬라이스는 GPU 없이 Apple Silicon에서 실행됩니다.
+## 현재 주 경로 · Windows WSL2 + GTX 1660
+
+현재 운영 경로는 WSL2 Ubuntu의 Minikube/KServe에서 Qwen3-1.7B FP16을 vLLM CUDA로 서빙하는 API-only 구성입니다.
 
 ```text
-Open WebUI → FastAPI Gateway → Kind/KServe → vLLM ARM64 CPU → Qwen3-1.7B BF16
+LAN client → Windows TCP 8000 → FastAPI Gateway → KServe → vLLM CUDA → Qwen3-1.7B FP16
+Git push/merge → GitHub Actions → GHCR digest → GitOps values → Argo CD pull → WSL2 Minikube
 ```
 
-이후 Mock Engine만 Qwen/vLLM/SGLang으로 교체하며 외부 API 계약은 유지합니다.
+Open WebUI는 이 경로에 배포하지 않습니다. 외부에는 인증·rate limit·요청 검증을 담당하는 Gateway 8000만 공개하고, Kubernetes API·Argo CD·Dashboard·vLLM 원본 API는 localhost에 둡니다.
 
-최종 결과는 맞습니다. 사용자가 문장을 보내면 Gateway가 선택된 Qwen 엔진에 요청하고,
-일반 JSON 또는 토큰 단위 SSE로 답변을 반환합니다.
+- [WSL2 GPU 설치·재부팅·API 운영 가이드](stacks/wsl2-gpu/README.md)
+- [GTX 1660 실측 성능과 최종 판단 보고서](stacks/wsl2-gpu/artifacts/performance/report.html)
 
-## 구현 로드맵
+## 보존된 실습 트랙
+
+- **Legacy · Apple Silicon:** Kind/KServe ARM64 CPU, llama.cpp, MLX-LM, Open WebUI 학습 경로입니다.
+- **보존된 legacy · RunPod:** 과거 원격 GPU 실습 파일은 회귀 참고용으로만 남겨 두며 현재 운영·완료 기준에는 사용하지 않습니다.
+
+두 트랙의 코드는 비교 학습과 회귀 검증을 위해 그대로 보존합니다. Gateway의 JSON/SSE API 계약은 모든 트랙에서 공통입니다.
+
+## 기존·선택 실습 로드맵
 
 | 일차 | 상태 | 구현 결과 | 배우는 핵심 |
 | --- | --- | --- | --- |
@@ -27,11 +37,11 @@ Open WebUI → FastAPI Gateway → Kind/KServe → vLLM ARM64 CPU → Qwen3-1.7B
 | 8일 | 예정 | Argo CD GitOps와 관측성 | image digest, Helm, Prometheus, Grafana |
 | 9일 | 예정 | 확장·canary·rollback·장애/비용 실험 | KEDA, Knative 선택, 운영 판단 |
 
-## 최종 모델 서빙 아키텍처
+## 현재 Windows 운영과 공통 아키텍처
 
-아래는 로드맵을 완료했을 때의 운영 목표입니다. 현재 Kind에는 Model Pod만 배포되어 있고
-Gateway와 Chat UI는 Mac에서 실행됩니다. 다음 배포 대상은 Windows 11·WSL2·GTX 1660의
-Minikube이며, 같은 Helm/KServe/Argo CD 구조를 유지해 이후 GKE로 이동할 수 있게 합니다.
+현재 배포는 Windows 11·WSL2·GTX 1660의 Minikube/KServe Standard Mode입니다.
+아래 이미지는 Apple 선택 요소까지 포함한 저장소 전체 설계이며, 실제 WSL2 운영값은
+상단의 stack README와 실측 보고서를 기준으로 합니다.
 
 - [Windows GTX 1660 GPU 운영 구조](docs/windows-gpu-ops.md)
 - [GTX 1660 추론 최적화와 아티클 실험 계획](docs/gtx1660-inference-optimization.md)
@@ -62,7 +72,7 @@ task architecture
 
 | 구성 요소 | 최종 역할 |
 | --- | --- |
-| Gateway Pod | Chat UI, 공개 API, 인증, 요청 검증과 엔진 라우팅 |
+| Gateway Pod | 공개 API, 인증, rate limit, 요청 검증과 모델명 변환 |
 | KServe | `ServingRuntime`과 `InferenceService`를 Deployment·Service로 변환 |
 | vLLM/SGLang | GPU에서 Qwen 모델을 실제로 로딩하고 추론 |
 | Helm | 환경별 values로 Kubernetes/KServe YAML 생성 |
@@ -76,14 +86,15 @@ scale-to-zero와 revision 기반 트래픽 관리가 필요할 때만 선택합�
 선택 기준은 [Kubernetes 모델 서빙 가이드](docs/kubernetes-serving.md)에 정리했습니다.
 [최종 아키텍처 HTML](docs/ai-serving-architecture.html)에서는 API와 CI/CD 흐름을 함께 볼 수 있습니다.
 
-4일차 코드는 완료됐으며 실제 L40S smoke만 RunPod 인스턴스를 할당한 뒤 실행합니다.
-현재 GitHub Actions는 역할이 겹치지 않는 세 workflow만 둡니다.
+### Workflow 트랙
 
-| Workflow | 실행 시점 | 역할 |
+현재 WSL2 경로는 전용 CI/release가 Gateway 이미지를 GHCR digest로 고정하고 GitOps values를 갱신합니다. 보존된 RunPod 파일은 현재 workflow·secret·완료 기준에 포함하지 않습니다.
+
+| 구분 | Workflow | 역할 |
 | --- | --- | --- |
-| `ci` | push, pull request | lint, typecheck, test, Gateway image build |
-| `gpu-runtime` | 수동 실행 | 선택한 엔진 image build, L40S JSON·SSE smoke, Pod 삭제 |
-| `cleanup-runpod` | 30분마다 | 중단된 workflow가 남긴 만료 Pod 삭제 |
+| 공통 | `ci.yaml` | lint, typecheck, test, Gateway image build |
+| 현재 WSL2 | `wsl2-gpu-ci.yml` | WSL2 stack 계약과 chart 검증 |
+| 현재 WSL2 | `wsl2-gpu-release.yml` | Gateway linux/amd64 build, GHCR digest, GitOps commit |
 
 로컬에서는 클라우드 자원을 만들지 않고 구조와 테스트만 검증합니다.
 
@@ -97,10 +108,9 @@ Task가 없다면 최소 구조 검증을 직접 실행합니다.
 uv run python scripts/verify_gpu_workflow.py
 ```
 
-실제 실행에 필요한 secret과 `gpu-runtime` 입력값은
-[CI/CD 연결 체크리스트](docs/cicd-setup.md)에 정리했습니다.
+현재 workflow secret과 GitOps 순서는 [CI/CD 연결 체크리스트](docs/cicd-setup.md)에 정리했습니다.
 
-## 빠른 시작
+## 공통 로컬 개발 빠른 시작
 
 Python 3.11 이상과 `uv`가 필요합니다.
 
@@ -259,9 +269,9 @@ uv run uvicorn apps.gateway.main:app --port 8000
 `role`은 채팅 템플릿에서 발화자를 구분합니다. `system`은 행동 지침, `user`는 사용자
 입력, `assistant`는 이전 모델 답변입니다.
 
-## Kind + KServe + vLLM ARM64 CPU + Open WebUI
+## Legacy · Apple Silicon Kind + KServe + vLLM ARM64 CPU + Open WebUI
 
-Apple Silicon Mac의 Docker 안에 Kind cluster를 만들고, KServe Standard Mode에서
+이 절은 보존된 Apple Silicon 학습 트랙입니다. Mac의 Docker 안에 Kind cluster를 만들고, KServe Standard Mode에서
 `Qwen/Qwen3-1.7B`를 BF16으로 vLLM의 Linux ARM64 CPU image에서 실행합니다. CUDA는 NVIDIA
 GPU용 병렬 컴퓨팅 플랫폼이라 이 경로에서는 사용하지 않습니다. 4B보다 답변 품질은
 낮을 수 있지만 CPU 실습에서 시작과 추론 대기 시간을 줄이기 위해 1.7B를 기본으로 사용합니다.
@@ -342,7 +352,7 @@ apps/          공개 Gateway와 deterministic Mock Engine
 engines/       Transformers baseline, MLX CPU, vLLM, SGLang
 benchmarks/    동일 workload의 TTFT·E2E·성공률 측정
 evals/         답변 품질 회귀 검사
-deploy/        RunPod, Cloud Run, Kind/KServe 설정
+stacks/wsl2-gpu/ WSL2 GPU 현재 운영 스택과 GitOps·Gateway 설정
 .github/       CI, image build, staging, 승격, rollback, cleanup
 ops/           metric dashboard와 alert 예시
 releases/      immutable release manifest schema
@@ -373,7 +383,6 @@ Kubernetes·KServe·Argo CD·Knative의 역할과 선택 기준은
 - CI가 lint, type check, test, image build를 수행한다.
 - staging smoke 이후에만 demo 트래픽을 승격할 수 있다.
 - 이전 image와 model revision으로 rollback할 수 있다.
-- RunPod 작업에 TTL과 비용 상한이 적용된다.
-- KServe가 vLLM·SGLang을 동일한 GPU 조건으로 배포한다.
+- 보존된 legacy RunPod 파일은 현재 workflow·secret·완료 기준에서 제외한다.
 - Argo CD가 Git에 고정된 image digest와 manifest를 클러스터에 반영한다.
 - Knative 사용 여부를 cold start와 scale-to-zero 요구로 판단할 수 있다.

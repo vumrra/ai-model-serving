@@ -20,7 +20,7 @@
     .verdict { margin-top:28px; padding:24px; background:#eaf7f1; border:1px solid #a9dac8;
       border-radius:18px; display:grid; gap:8px; }
     .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:14px; }
-    .card { background:var(--card); border:1px solid var(--line); border-radius:15px; padding:18px; }
+    .card { min-width:0; background:var(--card); border:1px solid var(--line); border-radius:15px; padding:18px; }
     .metric { font-size:29px; font-weight:780; letter-spacing:-.035em; }
     .muted,.note { color:var(--muted); } .note { font-size:13px; }
     .pass { color:var(--green); font-weight:750; } .fail { color:var(--red); font-weight:750; }
@@ -44,53 +44,417 @@
   <div class="eyebrow">Measured on Windows · WSL2 · GTX 1660 6GB</div>
   <h1>작은 GPU에서<br>쓸 만한 채팅 API 만들기</h1>
   <p class="lead">이 보고서는 이론상 최대치가 아니라 실제 KServe/vLLM 경로에서 고정한 요청을 반복해
-  지연, 처리량, VRAM, 전력, 품질을 비교한 결과다. 측정일은 2026-08-27 이다.</p>
+  지연, 처리량, VRAM, 전력, 품질을 비교한 결과다. 측정일은 2026-08-28 이다.</p>
 
   <section class="verdict">
-    <strong>결론 · Qwen3-1.7B FP16 / thinking off / GPU memory 0.80 유지</strong>
-    <span>4B AWQ는 6GB에 올라가지만 채팅 생성 속도가 절반 수준이고 품질 회귀 점수도 더 낮았다.
-    0.80은 기준 0.85 대비 처리량 손실을 1% 미만으로 제한하면서 VRAM 안전 여유를 확보했다.</span>
+    <strong>현재 증거의 답 · Qwen3-1.7B FP16 / graph / memory 0.75 / prefix cache on</strong>
+    <span>같은 short workload를 3회씩 반복한 구성 묶음 비교에서 After가 SLO 3/3을 통과했다. utilization과 prefix cache를 함께 바꿨으므로 어느 한 변수의 단독 효과로 해석하지 않는다.</span>
   </section>
+  <p class="note"><code>실측</code> HTTP 시계·API usage·nvidia-smi에서 직접 수집 ·
+  <code>계산</code> 실측값으로 환산 · <code>검증</code> 고정 규칙 통과 여부 ·
+  <code>해석/추론</code> 여러 지표를 함께 본 운영 판단 또는 미실측 경계</p>
 
-  <h2>서비스 목적과 통과 기준</h2>
-  <div class="grid">
-    <div class="card"><h3>목적</h3><p>한 명이 쓰는 한국어/코드 보조 채팅 LLM API</p></div>
-    <div class="card"><h3>응답 시작</h3><div class="metric">≤ 1,000 ms</div><p class="muted">TTFT p95</p></div>
-    <div class="card"><h3>생성 간격</h3><div class="metric">≤ 100 ms</div><p class="muted">TPOT p95 · ≥10 tok/s</p></div>
-    <div class="card"><h3>안전 여유</h3><div class="metric">≥ 512 MiB</div><p class="muted">6,144 MiB 중 미사용 VRAM</p></div>
+  <h2>두 가지 목적과 통과 기준</h2>
+  <div class="two">
+    <div class="card"><h3>목표 A · 대화형 기본</h3>
+      <p>한 명이 쓰는 한국어·코드 보조 채팅 API다. 성공률 100%, TTFT p95 ≤1,000ms,
+      TPOT p95 ≤100ms(약 ≥10 tok/s), 미사용 VRAM ≥512MiB를 모두 만족해야 한다.</p>
+      <p class="pass">After 묶음이 독립 run 3/3 통과</p>
+    </div>
+    <div class="card"><h3>목표 B · 모델 용량 우선</h3>
+      <p>성공률 100%, TTFT p95 ≤1,000ms, TPOT p95 ≤200ms(약 ≥5 tok/s),
+      미사용 VRAM ≥256MiB를 지키는 범위에서 파라미터 수를 키운다. 작은 모델보다 품질이
+      나쁘지 않다는 별도 검증과 지속 부하 확인도 필요하다.</p>
+      <p class="muted">4B AWQ는 대화형 TPOT ≤100ms gate 0/3, 용량 우선 TPOT ≤200ms·corrected used ≤5,710MiB/free ≥256MiB gate 3/3 run 통과. 원본 5,888MiB legacy label은 변조하지 않고 재계산했으며, 동일 30-case 품질 우위는 확인되지 않음</p>
+    </div>
+  </div>
+  <p class="note">모델이 메모리에 올라갔다는 사실만으로 운영 후보가 되지는 않는다. 품질·응답성·안정성
+  hard gate를 먼저 통과한 후보 중에서 크기와 효율을 비교한다.</p>
+
+  <h2>아키텍처 개선 전후</h2>
+  <h3>1 · GPU 계층</h3>
+  <div class="two">
+    <div class="card"><h3>직접 GPU 검증</h3><pre>Windows NVIDIA driver
+→ WSL2 GPU-PV
+→ Docker GPU container
+→ raw vLLM</pre>
+      <p class="note">Kubernetes를 넣기 전에 Windows driver가 Linux container까지 전달되는지만 검증했다.</p>
+    </div>
+    <div class="card"><h3>현재 선언형 운영</h3><pre>Windows NVIDIA driver
+→ WSL2 Ubuntu
+→ Minikube Docker runtime
+→ NVIDIA device plugin
+→ nvidia.com/gpu: 1
+→ KServe vLLM Pod</pre>
+      <p class="note">WSL 내부에는 Linux NVIDIA driver를 설치하지 않는다.</p>
+    </div>
   </div>
 
-  <h2>실제 요청 경로</h2>
+  <h3>2 · API 경로</h3>
+  <div class="two">
+    <div class="card"><h3>진단 경로</h3><pre>test client
+→ manual port-forward :8005
+→ KServe predictor
+→ raw vLLM
+→ pinned Qwen3-1.7B / measured config</pre>
+      <p class="note">엔진 기준 성능을 재는 localhost 전용 경로다.</p>
+    </div>
+    <div class="card"><h3>현재 서비스 경로</h3><pre>Mac / LAN client
+→ Windows Private LAN :8000
+→ portproxy + reconnecting forward
+→ FastAPI Gateway
+→ KServe ClusterIP
+→ vLLM graph @0.75 + prefix cache
+→ Qwen3-1.7B FP16</pre>
+      <p class="note">Gateway가 API key, rate limit, 입력 검증, qwen-demo alias와 thinking off를 담당한다.</p>
+    </div>
+  </div>
+
+  <h3>3 · 배포와 CD</h3>
+  <div class="two">
+    <div class="card"><h3>수동 단계</h3><pre>code/config change
+→ local build
+→ manual deploy
+→ manual API check</pre>
+      <p class="note">초기 gate를 통과할 때 사용한 운영자 주도 흐름이다.</p>
+    </div>
+    <div class="card"><h3>현재 pull-based GitOps</h3><pre>Mac push / merge
+→ GitHub Actions test + build
+→ GHCR image digest
+→ GitOps values bot commit
+→ Argo CD pull + Helm render
+→ Gateway rollout / KServe reconcile
+→ PostSync smoke</pre>
+      <p class="note">GitHub Actions는 집 Kubernetes API에 접속하지 않고, Argo CD가 Git을 당겨온다.</p>
+    </div>
+  </div>
+  <p class="note">GTX 1660은 Turing(SM 7.5)이며 이 실행에서는 vLLM V0와 XFormers가 선택됐다.
+  원본 vLLM 포트는 측정 때만 localhost:8005로 열고 외부에는 Gateway만 노출한다.</p>
+
+  <h2>실험 계약과 중단 gate</h2>
+  <div class="two">
+    <div class="card"><h3>고정 계약</h3><p>image digest와 model revision, FP16/AWQ 표현,
+      thinking off, seed 42, context 1024, warm-up 3회, prompt·출력 상한을 결과와 함께 기록한다.
+      단일 변수 실험과 구성 묶음 실험을 구분한다.</p></div>
+    <div class="card"><h3>현재 반복 단위</h3><p>short 기본 구성은 60요청을 독립 3회씩 반복했다.
+      long/shared-prefix/concurrency/seq 시나리오는 별도이며 p95는 장기 분포를 보장하지 않는다.</p></div>
+  </div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Gate</th><th>계약</th><th>현재 근거</th><th>다음 단계 중단 조건</th></tr></thead>
+    <tbody>
+      <tr><td>G0 API</td><td>models · JSON · SSE · thinking off</td><td>Gateway 20/20, usage와 [DONE]</td><td>오류 또는 불완전 stream</td></tr>
+      <tr><td>G1 반복성</td><td>같은 조건의 독립 run 비교</td><td>Before/After 각 60요청 × 3 run</td><td>큰 편차의 원인을 찾기 전 결론 금지</td></tr>
+      <tr><td>G2 workload</td><td>short · long prefill · long generation · shared prefix · C2/C4</td><td>각 시나리오 20–60요청</td><td>timeout 또는 SLO 실패</td></tr>
+      <tr><td>G3 자원·동시성</td><td>구성 묶음과 단일 변수 분리</td><td>util 0.80→0.75 묶음 · seq1→2 단일 변수</td><td>VRAM·TTFT·TPOT hard gate 실패</td></tr>
+      <tr><td>G4 모델</td><td>같은 thinking-off 품질 계약</td><td>1.7B FP16 · 4B AWQ 30-case</td><td>적재·속도 실패 또는 품질 우위 미확인</td></tr>
+      <tr><td>G5 안정성</td><td>재기동·control plane 증거</td><td>lease timeout·etcd DeadlineExceeded · manager 누적 6→11</td><td>원인 미확정 restart 또는 fsync 지연</td></tr>
+    </tbody>
+  </table></div>
+  <p class="note">새 결과가 없는 항목은 성능 수치를 추정하지 않고 현재 근거의 범위를 그대로 적는다.
+  명백히 6GB를 넘는 후보는 가중치 크기를 먼저 계산한 뒤 적재 실험 여부를 결정한다.</p>
+
+
+  <h2>반복 실측이 바꾼 결론</h2>
+  <div class="grid">
+    <div class="card"><h3><code>실측</code> TTFT p95 중앙값</h3>
+      <div class="metric">498.2 → 225.9 ms</div>
+      <p class="muted">구성 묶음 전후 -54.7%</p></div>
+    <div class="card"><h3><code>실측</code> 출력 처리량 중앙값</h3>
+      <div class="metric">10.12 → 10.61 tok/s</div>
+      <p class="muted">구성 묶음 전후 +4.8%</p></div>
+    <div class="card"><h3><code>실측</code> 최악 VRAM peak</h3>
+      <div class="metric">5,821 → 5,445 MiB</div>
+      <p class="muted">reserved 178MiB 반영 보수 free 145 → 521 MiB</p></div>
+    <div class="card"><h3><code>계산</code> GPU-only 비용 중앙값</h3>
+      <div class="metric">292.4 → 282.3원</div>
+      <p class="muted">백만 출력 토큰당 · 구성 묶음 전후 -3.5%</p></div>
+  </div>
+  <p class="note"><code>해석/추론</code> 같은 short workload를 각 3회 반복한 결과, After 묶음이
+  대화형 SLO를 3/3 run 통과하고 Before 묶음은 VRAM hard gate 때문에 0/3이었다.
+  이 비교는 <b>GPU memory utilization 0.80→0.75와 prefix caching flag 생략(default off)→on을 함께 바꿨다.</b>
+  따라서 차이를 어느 한 변수의 단독 효과로 귀속하지 않는다.</p>
+
+  <h3>독립 run 반복성 · 중앙값 (최소–최대)</h3>
+  <div class="table-wrap"><table>
+    <thead><tr><th>구성 묶음</th><th>run / 요청</th><th>HTTP 성공</th><th>TTFT p95</th>
+    <th>TPOT p95</th><th>tok/s</th><th>최악 VRAM</th><th>GPU 비용 중앙값</th><th>run SLO</th></tr></thead>
+    <tbody><tr><td>Before 묶음 · util 0.80 / prefix flag 생략(default off)</td><td>3 / 180</td><td>180/180</td><td>498.2 (497.7–500.1) ms</td><td>92.7 (91.9–92.9) ms</td><td>10.12 (10.08–10.16)</td><td>5,821 MiB</td><td>292.4원</td><td>0/3</td></tr><tr><td>After 묶음 · util 0.75 / prefix on</td><td>3 / 180</td><td>180/180</td><td>225.9 (223.8–226.5) ms</td><td>92.7 (92.1–92.8) ms</td><td>10.61 (10.59–10.69)</td><td>5,445 MiB</td><td>282.3원</td><td>3/3</td></tr></tbody>
+  </table></div>
+  <p class="note">두 묶음 모두 요청별 SLO 충족은 177/180이었다. 기존 artifact의 5,632MiB used gate는
+  free 512MiB를 보장하지 않는다. driver reserved 178MiB를 반영하면 After worst 5,445MiB의 보수 free는 약
+  521MiB로 512MiB gate를 약 9MiB 차이로 통과한다.</p>
+
+  <h3>Workload와 동시성 경계</h3>
+  <div class="table-wrap"><table>
+    <thead><tr><th>시나리오</th><th>요청 / client C</th><th>평균 입력 / 출력 tok</th><th>TTFT p95</th>
+    <th>TPOT p95</th><th>tok/s</th><th>tok/hour</th><th>VRAM</th><th>요청 SLO</th><th>판정</th></tr></thead>
+    <tbody><tr><td>공유 prefix · Before 묶음</td><td>30 / 1</td><td>533 / 63</td><td>3,955.8 ms</td><td>92.6 ms</td><td>6.54</td><td>23,559</td><td>5,804 MiB</td><td>0/30</td><td><span class="fail">SLO 실패</span></td></tr><tr><td>공유 prefix · After 묶음</td><td>30 / 1</td><td>533 / 63</td><td>246.9 ms</td><td>92.1 ms</td><td>10.64</td><td>38,320</td><td>5,444 MiB</td><td>30/30</td><td><span class="pass">SLO 통과</span></td></tr><tr><td>긴 입력 · util 0.80</td><td>20 / 1</td><td>587 / 64</td><td>3,939.1 ms</td><td>92.4 ms</td><td>6.60</td><td>23,744</td><td>5,809 MiB</td><td>0/20</td><td><span class="fail">TTFT 실패</span></td></tr><tr><td>긴 생성 · util 0.80</td><td>20 / 1</td><td>68 / 245</td><td>806.7 ms</td><td>92.4 ms</td><td>10.58</td><td>38,099</td><td>5,815 MiB</td><td>19/20</td><td><span class="fail">VRAM gate 실패</span></td></tr><tr><td>short · client concurrency 2</td><td>40 / 2</td><td>38 / 57</td><td>6,785.8 ms</td><td>92.4 ms</td><td>10.14</td><td>36,503</td><td>5,815 MiB</td><td>1/40</td><td><span class="fail">queue 실패</span></td></tr><tr><td>short · client concurrency 4</td><td>30 / 4</td><td>38 / 57</td><td>19,320.6 ms</td><td>92.2 ms</td><td>10.14</td><td>36,517</td><td>5,811 MiB</td><td>1/30</td><td><span class="fail">queue 실패</span></td></tr></tbody>
+  </table></div>
+  <ul>
+    <li><code>실측</code> client concurrency 2·4에서도 출력은 약 10.14 tok/s였지만 TTFT p95가
+      각각 6,785.8ms, 19,320.6ms로 늘었다.</li>
+    <li><code>해석/추론</code> 서버 <code>max_num_seqs=1</code>이므로 이는 batching 용량이 아니라
+      대기열 실험이다. 동시 사용자를 늘리는 설정으로 해석하면 안 된다.</li>
+    <li><code>실측</code> 긴 입력은 prefill 때문에 TTFT p95 3,939.1ms,
+      긴 생성은 TPOT p95 92.4ms와
+      10.58 tok/s였다.</li>
+    <li><code>실측</code> 공유-prefix workload의 개선도 util과 cache가 함께 바뀐 묶음 비교다.
+      prefix cache만의 효과를 분리하려면 같은 utilization에서 재실험해야 한다.</li>
+  </ul>
+
+  <h3>한 변수 실험 · max_num_seqs 1 vs 2</h3>
+  <p class="note"><code>검증</code> 계약 필드가 같고 max_num_seqs 1→2만 변경됨. 두 설정 모두 client concurrency 2,
+  util 0.75, graph, prefix cache on, 같은 model revision·workload hash를 사용했다.</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>설정</th><th>TTFT p95</th><th>TPOT p95</th><th>tok/s</th>
+    <th>tok/hour</th><th>VRAM</th><th>요청 SLO</th></tr></thead>
+    <tbody><tr><td>seq1 · 단일 run</td><td>6,699.4 ms</td><td>91.3 ms</td><td>10.13</td><td>36,461</td><td>5,431 MiB</td><td>0/40</td></tr><tr><td>seq2 · run 1</td><td>1,500.4 ms</td><td>121.1 ms</td><td>14.28</td><td>51,393</td><td>5,438 MiB</td><td>1/40</td></tr><tr><td>seq2 · run 2</td><td>251.4 ms</td><td>121.6 ms</td><td>16.25</td><td>58,496</td><td>5,432 MiB</td><td>1/40</td></tr><tr><td>seq2 · run 3</td><td>252.1 ms</td><td>121.7 ms</td><td>16.21</td><td>58,340</td><td>5,439 MiB</td><td>1/40</td></tr><tr><td><b>seq2 · 3-run 중앙값</b></td><td>252.1 ms</td><td>121.6 ms</td><td>16.21</td><td>58,340</td><td>5,439 MiB</td><td>1/40 · 각 run</td></tr></tbody>
+  </table></div>
+  <div class="two">
+    <div class="card"><h3>기본 · seq1 대화형</h3>
+      <p><code>실측</code> decode TPOT 91.3ms지만 두 요청을 직렬화해
+      TTFT p95 6,699.4ms다. 한 사용자 기본값은 seq1로 유지한다.</p></div>
+    <div class="card"><h3>선택 · seq2 두 사용자 처리량</h3>
+      <p><code>실측</code> aggregate 중앙값 16.21 tok/s,
+      seq1 대비 +60.0%. 대신 TPOT p95 121.6ms로
+      대화형 100ms gate를 넘으므로 별도 throughput profile이다.</p></div>
+  </div>
+  <p class="note"><code>실측</code> seq2 run 1 TTFT p95 1,500.4ms는
+  run 2·3 중앙 251.7ms와 동떨어진 outlier다. 원인은 이 artifact만으로 확인되지 않았다.
+  안정 구간 두 run은 각각 251.4ms와
+  252.1ms였으며, seq1은 아직 단일 run이라 반복성 비교가 비대칭이다.</p>
+
+
+
+  <h3>30-case 품질 계약</h3>
+  <div class="grid">
+    <div class="card"><h3><code>검증</code> 규칙 통과</h3><div class="metric">18/30</div>
+      <p class="muted">60% · thinking off</p></div>
+    <div class="card"><h3><code>계산</code> Wilson 95% 구간</h3>
+      <div class="metric">42.3–75.4%</div>
+      <p class="muted">30개 이항 표본의 불확실성</p></div>
+    <div class="card"><h3>실패 규칙</h3><p>길이 상한 초과 10건 · 정확 일치 실패 7건 · JSON 형식 실패 4건 · 필수 키워드 누락 1건</p>
+      <p class="note">한 case가 여러 실패 규칙에 함께 집계될 수 있다.</p></div>
+  </div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>범주</th><th>통과</th><th>점수</th><th>Wilson 95%</th></tr></thead>
+    <tbody><tr><td>산술</td><td>0/5</td><td>0%</td><td>0.0–43.4%</td></tr><tr><td>한국어 지시 준수</td><td>3/4</td><td>75%</td><td>30.1–95.4%</td></tr><tr><td>JSON 값·형식</td><td>1/5</td><td>20%</td><td>3.6–62.4%</td></tr><tr><td>코드 구조</td><td>3/4</td><td>75%</td><td>30.1–95.4%</td></tr><tr><td>멀티턴 문맥</td><td>3/4</td><td>75%</td><td>30.1–95.4%</td></tr><tr><td>도메인 설명</td><td>4/4</td><td>100%</td><td>51.0–100.0%</td></tr><tr><td>보안 거절</td><td>4/4</td><td>100%</td><td>51.0–100.0%</td></tr></tbody>
+  </table></div>
+  <p class="note">응답 원문은 저장하거나 표시하지 않고 case ID, 범주, 규칙 실패와 answer hash만 남겼다.
+  이 결과는 규칙 기반 회귀 gate이지 일반 지능 벤치마크가 아니다. 이 표 하나만으로 모델 간 우열을
+  말할 수 없으며, 완전한 4B capacity bundle이 있을 때 동일 30-case를 아래에서 함께 비교한다.</p>
+
+
+  <h3>용량 우선 후보 · Qwen3-4B AWQ 3-run</h3>
+  <div class="table-wrap"><table>
+    <thead><tr><th>후보</th><th>run / 요청</th><th>HTTP 성공</th><th>TTFT p95</th>
+    <th>TPOT p95</th><th>tok/s</th><th>최악 VRAM</th><th>GPU 비용 중앙값</th><th>legacy run SLO</th></tr></thead>
+    <tbody>
+      <tr><td>1.7B FP16 · 대화형 기본</td><td>3 / 180</td><td>180/180</td><td>225.9 (223.8–226.5) ms</td><td>92.7 (92.1–92.8) ms</td><td>10.61 (10.59–10.69)</td><td>5,445 MiB</td><td>282.3원</td><td>3/3</td></tr>
+      <tr><td>4B AWQ · 용량 우선</td><td>3 / 180</td><td>180/180</td><td>391.1 (379.4–391.2) ms</td><td>173.1 (173.1–173.8) ms</td><td>5.58 (5.56–5.69)</td><td>5,336 MiB</td><td>466.8원</td><td>3/3</td></tr>
+    </tbody>
+  </table></div>
+  <p class="note"><code>검증</code> 4B의 대화형 TPOT ≤100ms gate는
+  0/3 run, 용량 우선 계약(TTFT ≤1,000ms · TPOT ≤200ms ·
+  corrected VRAM used ≤5,710MiB · reserved 178MiB 반영 free ≥256MiB)은 3/3 run 통과했다.
+  원본 raw artifact의 VRAM 5,888MiB label은 legacy 계산 오류이며 변조하지 않았다. 표의 legacy run SLO 3/3도 이 결론의
+  근거로 사용하지 않고, worst peak 5,336MiB → 보수 free 약 630MiB를
+  위 corrected gate로 재계산했다. legacy label 검출: 예 ·
+  3-run engine/model/revision/workload/config invariant: 확인.</p>
+  <p class="note"><code>검증</code> 4B 개별 요청 충족은 178/180다.
+  run 1/2의 첫 응답 TTFT는 각각 12,343ms, 14,070ms로 일시 지연이 있었다.
+  따라서 run SLO(p95 기준) 3/3 통과와 개별 요청 달성률을 분리해 해석한다.</p>
+
+  <div class="card"><h3>4B sampler lifecycle 대조 · 20 requests</h3>
+    <p><code>실측</code> HTTP 20/20,
+    TTFT p95 370.6ms, TPOT p95 172.8ms,
+    5.69 tok/s,
+    VRAM peak 5,317MiB로 SLO를 통과했다.</p>
+    <p class="note"><code>검증</code> sampler-before-warmup 및 측정 전 buffer clear:
+    확인.
+    <code>해석/추론</code> 이것은 sampler 수명주기(웜업 전 시작·측정 전 buffer clear)가 첫 응답 지연 또는
+    SLO에 영향을 미치는지 탐색하기 위한 대조다. 순차 실행 20요청이고 workload hash도 달라 계측 간섭의 원인이나
+    해결로 확정하지 않는다.</p>
+  </div>
+
+
+  <div class="grid">
+    <div class="card"><h3><code>검증</code> 1.7B 품질</h3>
+      <div class="metric">18/30</div>
+      <p class="muted">Wilson 95% 42.3–75.4%</p></div>
+    <div class="card"><h3><code>검증</code> 4B AWQ 품질</h3>
+      <div class="metric">17/30</div>
+      <p class="muted">Wilson 95% 39.2–72.6%</p></div>
+    <div class="card"><h3><code>실측</code> 4B warm ready</h3>
+      <div class="metric">142 s</div>
+      <p class="muted">1.7B 단일 관측 254s</p></div>
+  </div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>30-case 범주</th><th>1.7B FP16</th><th>4B AWQ</th></tr></thead>
+    <tbody><tr><td>산술</td><td>0/5</td><td>0/5</td></tr><tr><td>한국어 지시 준수</td><td>3/4</td><td>4/4</td></tr><tr><td>JSON 값·형식</td><td>1/5</td><td>1/5</td></tr><tr><td>코드 구조</td><td>3/4</td><td>4/4</td></tr><tr><td>멀티턴 문맥</td><td>3/4</td><td>0/4</td></tr><tr><td>도메인 설명</td><td>4/4</td><td>4/4</td></tr><tr><td>보안 거절</td><td>4/4</td><td>4/4</td></tr></tbody>
+  </table></div>
+  <p class="note"><code>검증</code> 동일 case 순서: 예.
+  paired 30-case는 둘 다 통과 14건, 1.7B만 4건, 4B만 3건, 둘 다 실패 9건. 총 통과는 4B 17/30, 1.7B 18/30이고
+  두 Wilson 구간도 크게 겹치므로 이 30개 계약은 4B의 품질 우위를 입증하지 않는다.
+  성능 비교도 모델 크기와 FP16/AWQ 표현을 함께 바꾼 제품 후보 비교다.
+  <code>한계</code> 이 historical quality JSON은 동일 30 case ID/order만 확인할 수 있고 pinned revision, suite SHA,
+  실행 시각, serving config를 담지 않아 artifact 단독으로 동일 suite·revision을 감사할 수 없다. 따라서 품질 결론은
+  directional evidence일 뿐 모델 선택의 단독 근거로 사용하지 않는다. warm-cache startup도 모델별 1회 관측이라
+  빠른 쪽의 일반적 우위를 뜻하지 않는다.</p>
+
+
+  <h3>시작 시간과 자원 envelope</h3>
+  <div class="grid">
+    <div class="card"><h3><code>실측</code> warm-cache ready</h3><div class="metric">254 s</div>
+      <p class="muted">container→ready 244s · restart 0</p></div>
+    <div class="card"><h3><code>실측</code> GPU 온도</h3><div class="metric">72°C</div>
+      <p class="muted">After 3-run 중 최대</p></div>
+    <div class="card"><h3><code>실측</code> 시스템 RAM</h3><div class="metric">4,695 MiB</div>
+      <p class="muted">After 3-run peak 최댓값</p></div>
+    <div class="card"><h3><code>실측</code> swap</h3><div class="metric">110 MiB</div>
+      <p class="muted">After 3-run peak 최댓값</p></div>
+    <div class="card"><h3><code>실측</code> GPU 평균 전력</h3><div class="metric">54.3 W</div>
+      <p class="muted">After run별 평균의 중앙값</p></div>
+  </div>
+  <p class="note">warm cache 시작은 1회 관측뿐이며 cold-cache 비교가 아니다. 각 short run도 약 5분대라
+  장시간 soak 안정성을 증명하지 않는다. 전체 성능 study는 1270개 요청, 합계 약 138.4분이다.</p>
+
+  <h3>최종 장시간 안정성 · 360 requests</h3>
+  <div class="grid">
+    <div class="card"><h3><code>실측</code> HTTP 성공</h3>
+      <div class="metric">360/360</div>
+      <p class="muted">100.0%</p></div>
+    <div class="card"><h3><code>실측</code> 측정 시간</h3>
+      <div class="metric">32m 41s</div>
+      <p class="muted">1,960.881s measurement · <a href="study/kserve-control-plane-soak.md">control-plane read-only 관찰 32m56s</a></p></div>
+    <div class="card"><h3>TTFT / TPOT p95</h3>
+      <div class="metric">227.4 / 93.3 ms</div></div>
+    <div class="card"><h3><code>실측</code> 개별 SLO outlier</h3>
+      <div class="metric">2/360</div>
+      <p class="muted">첫 measured <code>kubernetes-ko:r1</code> TTFT 14,904.5ms ·
+      run max 14,904.5ms</p>
+      <p class="note">TPOT max 125.5ms · <code>python-code:r54</code>.</p></div>
+    <div class="card"><h3>출력 처리량</h3>
+      <div class="metric">10.50 tok/s</div>
+      <p class="muted">37,805 tok/hour</p></div>
+    <div class="card"><h3>GPU envelope</h3>
+      <div class="metric">5,444 MiB</div>
+      <p class="muted">peak VRAM · 71°C peak ·
+      53.4W mean</p></div>
+    <div class="card"><h3>WSL memory envelope</h3>
+      <div class="metric">4,706 MiB</div>
+      <p class="muted">RAM peak · swap 233MiB peak</p></div>
+    <div class="card"><h3><code>검증</code> SLO</h3>
+      <div class="metric"><span class="pass">통과</span></div>
+      <p class="muted">358/360 requests ·
+      config contract 확인</p></div>
+  </div>
+
+  <div class="two">
+    <div class="card"><h3>1.7B no-sampler 대조 · 20 requests</h3>
+      <p><code>실측</code> HTTP 20/20,
+      첫 TTFT 211.4ms, max 223.8ms,
+      p95 222.6ms, TPOT p95 91.2ms,
+      10.78 tok/s.</p>
+      <p class="note"><code>검증</code> <code>gpu_sampler: disabled</code>:
+      확인 ·
+      <a href="study/qwen3-1.7b-fp16-util075-no-sampler-20.json">artifact</a></p></div>
+    <div class="card"><h3>계측 상호작용 해석의 한계</h3>
+      <p><code>해석/추론</code> no-sampler 20개에서 초기 stall이 재현되지 않은 점은 계측 상호작용 가설을 지지한다.
+      하지만 작은 표본이고 GPU samples가 기록된 3×60에서도 TTFT max 495.3ms로 안정적이었으므로 sampler를 원인이나 해결로 확정할 수 없다.
+      간헐적인 host/runtime stall도 배제하지 못한다.</p></div>
+  </div>
+
+  <p class="note"><code>검증</code> HTTP 360/360과 aggregate p95·자원 SLO는 통과했지만 개별 요청은
+  358/360만 SLO를 만족했다. 2개 outlier를 숨기지 않고 aggregate 판정과 분리한다.
+  <code>해석/추론</code> 이 한 번의 장시간 run은 단기 3-run보다 강한 데이터 플레인 증거지만 여러 날의 uptime,
+  재부팅, 별도 control-plane 안정성을 보장하지 않는다.</p>
+
+
+
+  <h3>6GB에서의 모델 크기 경계</h3>
+  <div class="table-wrap"><table>
+    <thead><tr><th>후보</th><th>가중치만의 산술</th><th>현재 근거</th><th>판정</th></tr></thead>
+    <tbody>
+      <tr><td>Qwen3-1.7B FP16</td><td><code>계산</code> 약 3.4GB</td><td><code>실측</code> After worst 5,445MiB · reserved 178MiB 반영 보수 free 약 521MiB</td><td class="pass">대화형 기본</td></tr>
+      <tr><td>Qwen3-4B AWQ</td><td>4-bit 계열 · 실제 artifact로 확인</td><td><code>실측</code> 5.58 tok/s · peak 5,336MiB · corrected free256 gate 3/3 · 30-case 17/30</td><td>용량 우선 조건부</td></tr>
+      <tr><td>4B FP16</td><td><code>계산</code> ideal weights 7,629MiB</td><td>KV cache·runtime 전에도 6,144MiB 초과 · 적재 미실행</td><td class="fail">계산 gate 기각</td></tr>
+      <tr><td>8B FP16</td><td><code>계산</code> 약 16GB</td><td>가중치만으로 6GB 초과</td><td class="fail">불가</td></tr>
+      <tr><td>8B AWQ</td><td><code>계산</code> ideal packed 3,815MiB</td><td><code>해석/추론</code> 4B 실측 non-weight 3,429 + ideal packed 3,815 ≈ 7,243MiB · load test 미실행</td><td><span class="fail">기각 · 미실행</span></td></tr>
+    </tbody>
+  </table></div>
+  <p class="note"><code>해석/추론</code> 현재 적재 성공한 최대 후보는 4B AWQ지만, 기본값은 1.7B FP16이다.
+  4B AWQ는 ≥5 tok/s를 허용하고 모델 용량 자체를 우선할 때만 조건부다. 동일한 30-case에서는 품질 우위가 확인되지 않았다.
+  4B 이상 FP16 품질이 필요하면 12GB 이상 GPU 재평가는 합리적이지만, 그 하드웨어 성능은 이 PC에서 실측하지 않았다.</p>
+
+
+  <h3>KServe controller 재시작 사건 · 로그 기반 진단</h3>
+  <div class="two">
+    <div class="card"><h3><code>실측</code> 관측 증거</h3>
+      <p>이전 관측의 etcd slow <code>fdatasync</code> 최대는 3.891초였고, 최근 24시간 cluster live log에서는
+      최대 7.826초와 후속 장애 구간의 2.4~3.4초 지연을 확인했다. manager의 lease renew timeout → leader election lost →
+      exit 1은 로그로 직접 확인됐고, 같은 요청에 kube-apiserver의 etcd DeadlineExceeded·handler timeout이 있었다.
+      약 12초 뒤 재시작한 대상은 storage-initializer가 아닌 Minikube storage-provisioner다. soak 뒤 후속 read-only 관찰에서
+      동일 Pod의 manager container 누적 restart는 6→11로 더 증가했고 storage-provisioner는 114였다. 같은 Pod의
+      kube-rbac-proxy container는 0이므로 container 이름을 구분하지 않으면 manager 11을 0으로 잘못 읽을 수 있다.
+      predictor와 Gateway는 restart 0이었다.</p></div>
+    <div class="card"><h3><code>해석/추론</code> 가장 일관된 경로</h3>
+      <p>etcd fdatasync 지연 → etcd/API timeout → lease 갱신 실패 → leader 상실·controller 재시작 순서는 로그와 일치한다.
+      그러나 최종 backing storage latency가 WSL VHDX, Docker 경로, host I/O 중 어디에서 시작됐는지는 아직 구분하지 못했다.</p></div>
+  </div>
   <div class="flow">
-    <div class="node">LAN Client<br>:8000</div><div class="arrow">→</div>
-    <div class="node">FastAPI<br>Gateway</div><div class="arrow">→</div>
-    <div class="node">KServe<br>Service</div><div class="arrow">→</div>
-    <div class="node">vLLM V0<br>XFormers</div><div class="arrow">→</div>
-    <div class="node">Qwen3-1.7B<br>FP16</div>
+    <div class="node">fdatasync<br>2.4–3.4s<br>(max 7.826s)</div><div class="arrow">→</div>
+    <div class="node">etcd commit<br>stall</div><div class="arrow">→</div>
+    <div class="node">API transaction<br>&gt;5s</div><div class="arrow">→</div>
+    <div class="node">leader lease<br>loss</div><div class="arrow">→</div>
+    <div class="node">controller<br>restart</div>
   </div>
-  <p class="note">GTX 1660은 Turing(SM 7.5)이어서 vLLM V1과 FlashAttention-2를 쓰지 못한다.
-  원본 vLLM 포트는 측정 때만 localhost:8005로 열었고 외부에는 Gateway만 노출한다.</p>
+  <ul>
+    <li><code>검증</code> read-only 확인에서 etcd dataDir은 <code>/var/lib/minikube/etcd</code>,
+      Docker node의 <code>/var</code>는 <code>/dev/sdd</code>였다. 디렉터리 256MiB 중 WAL 245MiB,
+      snapshot DB 12MiB, disk 사용률 약 7%, node disk pressure false였고 OOMKilled 근거도 없었다.</li>
+    <li><code>검증</code> controller CPU는 request 100m, limit 500m다. WAL fsync lifetime 평균은 206ms이고
+      1.024초 초과 5.91%, 2.048초 초과 1.41%, 8.192초 초과 6회였다.
+      <code>해석/추론</code> CPU limit은 root cause로 입증되지 않았고, 500m 설정도 etcd persistence 지연의 근본 해결은 아니다.</li>
+    <li><code>검증</code> 잘못된 autoscaler class 표기는 효과가 없어 HPA가 생성됐고
+      <code>autoscalerClass: none</code>으로 바로잡았다. <code>해석/추론</code> HPA reconcile과 etcd write가
+      줄 수는 있지만 실제 write 감소량과 controller 재시작 완화 효과는 측정하지 않았다.</li>
+    <li>재발 판단은 controller restart 수만 보지 말고 etcd fsync 지연, API timeout,
+      lease-renew 실패의 시간 순서를 함께 확인한다.</li>
+    <li><code>해석/추론</code> 작은 DB·disk pressure 부재·OOM/CPU-limit 근거 부재는 단순 용량 고갈, OOM, CPU limit 가설을 약화한다.
+      storage path 지연은 강한 상관이지만 WSL VHDX/Docker/host I/O 중 최종 원인은 미확정이다. 다음 gate는
+      <code>wal_fsync_duration_seconds</code> p99와 backing storage latency의 A/B 계측이다.</li>
+  </ul>
+  <p class="note">KServe 공식 문서의 HPA autoscaler 계약은
+  <a href="https://kserve.github.io/website/docs/model-serving/predictive-inference/autoscaling/hpa-autoscaler">KServe HPA Autoscaler</a>를 따른다.
+  fsync 지연과 다음 측정 gate는 <a href="https://etcd.io/docs/v3.7/tuning/">etcd tuning</a>과
+  <a href="https://etcd.io/docs/v3.6/metrics/">etcd metrics</a>를 따른다.</p>
 
-  <h2>최종 후보 실측</h2>
+
+
+  <h2>최종 후보 반복 실측</h2>
+  <p class="note">After 묶음 3개 독립 run의 중앙값이며 VRAM은 세 run 중 최악값이다.</p>
   <div class="grid">
-    <div class="card"><h3>TTFT p95</h3><div class="metric">482.1 ms</div><span class="pass">통과</span></div>
-    <div class="card"><h3>TPOT p95</h3><div class="metric">90.2 ms</div><span class="pass">통과</span></div>
-    <div class="card"><h3>실제 총 처리량</h3><div class="metric">10.41 tok/s</div><p class="muted">37,458 tok/hour</p></div>
-    <div class="card"><h3>최대 VRAM</h3><div class="metric">5,565 MiB</div><p class="muted">579 MiB 여유</p></div>
-    <div class="card"><h3>GPU 전력</h3><div class="metric">49.5 W</div><p class="muted">측정 구간 평균</p></div>
-    <div class="card"><h3>GPU 에너지</h3><div class="metric">1.322 Wh</div><p class="muted">1K 출력 토큰당</p></div>
-    <div class="card"><h3>GPU 비용</h3><div class="metric">264.5 원</div><p class="muted">백만 출력 토큰당</p></div>
+    <div class="card"><h3>TTFT p95</h3><div class="metric">225.9 ms</div><span class="pass">통과</span></div>
+    <div class="card"><h3>TPOT p95</h3><div class="metric">92.7 ms</div><span class="pass">통과</span></div>
+    <div class="card"><h3>출력 처리량</h3><div class="metric">10.61 tok/s</div><p class="muted">38,206 tok/hour</p></div>
+    <div class="card"><h3>최대 VRAM</h3><div class="metric">5,445 MiB</div><p class="muted">521 MiB 여유</p></div>
+    <div class="card"><h3>GPU 전력</h3><div class="metric">54.3 W</div><p class="muted">After run별 측정 구간 평균의 중앙값</p></div>
+    <div class="card"><h3>GPU 에너지</h3><div class="metric">1.412 Wh</div><p class="muted">1K 출력 토큰당</p></div>
+    <div class="card"><h3>GPU 비용</h3><div class="metric">282.3 원</div><p class="muted">백만 출력 토큰당</p></div>
   </div>
 
-  <h2>실제 배포 경로 검증</h2>
+  <h2>이전 Gateway E2E · util 0.80 단일 실행</h2>
   <div class="grid">
     <div class="card"><h3>인증 SSE</h3><div class="metric">20/20</div><p class="muted">성공 · usage · [DONE]</p></div>
-    <div class="card"><h3>Gateway TTFT p95</h3><div class="metric">482.7 ms</div><span class="pass">통과</span></div>
-    <div class="card"><h3>Gateway TPOT p95</h3><div class="metric">90.6 ms</div><span class="pass">통과</span></div>
-    <div class="card"><h3>시간당 출력 토큰</h3><div class="metric">37,259</div><p class="muted">Gateway 전체 경로</p></div>
-    <div class="card"><h3>관측 처리량 차이</h3><div class="metric">0.53%</div><p class="muted">raw 대비 · 단일 실행</p></div>
-    <div class="card"><h3>Gateway GPU 비용</h3><div class="metric">265.1 원</div><p class="muted">백만 출력 토큰당</p></div>
-    <div class="card"><h3>배포 digest</h3><div class="metric">e4e2fa58031d</div><p class="muted">sha256 앞 12자리</p></div>
+    <div class="card"><h3>Gateway TTFT p95</h3><div class="metric">482.7 ms</div><span class="pass">이전 run 통과</span></div>
+    <div class="card"><h3>Gateway TPOT p95</h3><div class="metric">90.6 ms</div><span class="pass">이전 run 통과</span></div>
+    <div class="card"><h3>시간당 출력 토큰</h3><div class="metric">37,259</div><p class="muted">Gateway 전체 경로 · 이전 run</p></div>
+    <div class="card"><h3>관측 처리량 차이</h3><div class="metric">0.53%</div><p class="muted">raw 대비 · 이전 단일 실행</p></div>
+    <div class="card"><h3>Gateway GPU 비용</h3><div class="metric">265.1 원</div><p class="muted">백만 출력 토큰당 · 이전 run</p></div>
+    <div class="card"><h3>배포 digest</h3><div class="metric">e4e2fa58031d</div><p class="muted">sha256 앞 12자리 · 이전 run</p></div>
+  </div>
+  <p class="note">이 artifact의 config_id는 gateway-qwen3-1.7b-fp16-util080-thinking-off다. 최종 util 0.75 + prefix cache 구성의 Gateway E2E 비교는 아직 재측정하지 않았으므로, 이 수치를 최종 배포 경로 성능으로 일반화하지 않는다.</p>
   </div>
   <p class="note">GitHub Actions → GHCR digest → Argo CD sync 뒤 측정했다. Windows LAN SSE와
   포워드 자동 복구는 <a href="deployment-verification.json">deployment-verification.json</a>에 기록했다.</p>
@@ -104,6 +468,24 @@
   <p class="note">전기요금은 200원/kWh 가정의 GPU 전력만 계산했다. PC 나머지 부품, 냉각,
   감가상각은 제외하므로 클라우드 비용과 직접 비교하면 안 된다.</p>
 
+  <h2>숫자를 읽는 법</h2>
+  <div class="grid">
+    <div class="card"><h3><code>계산</code> TPOT</h3><p><code>(E2E−TTFT)/(출력 토큰−1)</code>로
+      요청별 평균 생성 간격을 구한 뒤 p95를 계산했다. 각 토큰의 실제 간격 분포인 ITL을 직접 잰 값은 아니다.</p></div>
+    <div class="card"><h3><code>계산</code> tok/hour</h3><p>완료 토큰을 각 run의 실제 측정 구간으로 나눈 뒤
+      3,600초로 외삽했다. 한 시간 지속 부하를 실제로 실행한 값은 아니다.</p></div>
+    <div class="card"><h3><code>계산</code> GPU-only 비용</h3><p>활성 구간의 GPU 평균 전력과
+      200원/kWh 가정을 사용했다. CPU·RAM·냉각·idle 전력·구입비와 감가상각은 포함하지 않는다.</p></div>
+    <div class="card"><h3><code>검증</code> 품질 계약</h3><p>1.7B는 30-case와 Wilson 구간을, 기존 모델 비교는 9-case를 사용했다.
+      둘 다 일반 지능 점수가 아니며 서로 다른 표본의 점수를 직접 비교하지 않는다.</p></div>
+  </div>
+  <ul>
+    <li>반복 run의 p95 중앙값도 약 5분대 표본의 tail일 뿐 장기 분포나 soak test를 대신하지 않는다.</li>
+    <li>1.7B FP16과 4B AWQ 비교는 파라미터 수와 숫자 표현을 함께 바꾼 제품 후보 비교다. 모델 크기 하나의 효과가 아니다.</li>
+    <li>raw와 Gateway 실행은 같은 요청 계약이지만 동시에 짝지어 측정하지 않았다. 0.53%는 관측 차이이며 Gateway 원인으로 단정하지 않는다.</li>
+    <li>4B는 코드 계약을 통과했지만 일부 실패는 답변 길이 제한 때문이었다. 현재 결과는 품질 우위가 미입증됐다는 뜻이다.</li>
+  </ul>
+
   <h2>튜닝 실험 · 한 변수씩</h2>
   <div class="table-wrap"><table>
     <thead><tr><th>설정</th><th>TTFT p95</th><th>TPOT p95</th><th>tok/s</th>
@@ -111,9 +493,10 @@
   </table></div>
   <ul>
     <li><b>enforce-eager</b>: TTFT는 빨라졌지만 TPOT·총 처리량이 소폭 나빠지고 VRAM 절감은 39MiB뿐이라 기각.</li>
-    <li><b>memory 0.80</b>: 처리량 손실 약 0.5%로 287MiB를 절감해 채택.</li>
-    <li><b>4B AWQ</b>: 로드는 성공했지만 TPOT SLO 실패, 에너지 증가, 품질 이득 미입증으로 기각.</li>
-    <li><b>SGLang/prefix cache</b>: 현재 단일 사용자·공유 prefix 없는 workload에서는 이득 조건이 없어 추가 엔진을 도입하지 않음.</li>
+    <li><b>memory 0.80</b>: 초기 단일 변수 진단에서 처리량 손실 약 0.5%로 287MiB를 절감한 중간안.</li>
+    <li><b>memory 0.75 + prefix cache</b>: 같은 short workload 3회씩의 구성 묶음 비교에서 SLO 3/3을 통과해 최종안으로 채택.</li>
+    <li><b>4B AWQ</b>: 로드는 성공했지만 대화형 TPOT SLO 실패, 에너지 증가, 품질 이득 미입증으로 기본안에서 기각.</li>
+    <li><b>인과 한계</b>: 최종 묶음은 utilization과 prefix cache를 함께 바꿨으므로 각각의 단독 효과를 주장하지 않는다.</li>
   </ul>
   <p class="note">초기 세 튜닝 실행은 raw API의 Qwen 기본 thinking이 켜진 것을 발견하기 전의 진단 실행이다.
   같은 조건끼리 엔진/메모리 차이만 비교했고, 대표 성능은 별도의 thinking-off 실행만 사용했다.</p>
@@ -121,21 +504,54 @@
   <h2>개선 결과와 다음 순서</h2>
   <ul>
     <li><b>적용</b>: graph mode를 유지해 eager보다 시간당 처리량을 보존했다.</li>
-    <li><b>적용</b>: GPU memory 0.85→0.80으로 peak를 287MiB 줄여 579MiB의 운영 여유를 만들었다.</li>
-    <li><b>조건부</b>: 여러 사용자가 같은 긴 system prompt를 공유할 때만 prefix cache를 켜고 같은 workload로 재측정한다.</li>
-    <li><b>하드웨어</b>: 4B 이상 품질이 필요하면 12GB 이상 GPU에서 FP16/BF16 모델을 다시 비교한다. 현재 6GB의 4B AWQ는 SLO를 통과하지 못했다.</li>
+    <li><b>적용</b>: memory 0.75 + prefix cache 묶음의 worst peak 5,445MiB는, 기존 artifact에 <code>memory.free</code>가 없어서 driver reserved 178MiB를 뺀 보수 추정 free 약 521MiB다. 512MiB gate를 약 9MiB 차이로 통과했다.</li>
+    <li><b>후속 격리</b>: prefix cache 단독 효과는 동일 utilization의 on/off 짝 실험으로 분리한다.</li>
+    <li><b>하드웨어</b>: 4B 이상 품질이 필요하면 12GB 이상 GPU에서 FP16/BF16 모델을 다시 비교한다. 현재 6GB의 4B AWQ는 대화형 SLO를 통과하지 못했다.</li>
   </ul>
   <p class="note">최적화는 단일 숫자 최대화가 아니라 TTFT·TPOT·처리량·VRAM을 동시에 보는 Pareto 선택이다.
-  eager는 TTFT만 개선했고 0.80은 VRAM 여유를 크게 개선했으므로, 최종안은 graph/0.80 조합이다.</p>
+  반복 실측 기준 최종안은 graph / memory 0.75 / prefix cache on이며 변경 묶음의 효과로만 해석한다.</p>
+
+  <h2>GTX 1660 모델·운영 의사결정</h2>
+  <div class="two">
+    <div class="card"><h3>모델 선택</h3><pre>채팅에서 ≥10 tok/s가 필요한가?
+├─ 예 → 1.7B FP16 / graph / 0.75 / prefix on
+└─ 아니오, ≥5 tok/s를 허용하는가?
+   ├─ 아니오 → 1.7B 유지
+   └─ 예 → 더 큰 모델의 품질 우위가
+            별도 계약에서 확인됐는가?
+      ├─ 예 → 지속 부하 통과 후 조건부 채택
+      └─ 아니오 → 1.7B 유지
+
+8B 이상이 꼭 필요한가?
+└─ 적재 결과 없이 가능하다고 쓰지 않는다.
+   load gate를 통과하지 못하면 12GB 이상 GPU로 이동</pre></div>
+    <div class="card"><h3>운영 구조</h3><pre>GPU가 한 장인가?
+└─ KServe Standard / replica 1 / Recreate
+
+외부 호출이 필요한가?
+├─ Gateway :8000만 Private LAN에 공개
+└─ K8s API · Argo CD · raw vLLM은 localhost
+
+새 release가 실패했는가?
+└─ Git revert → Argo CD가 이전 digest 복구
+
+무중단·고가용성이 필요한가?
+└─ 현 PC에 기능을 더하지 말고 GPU/노드를 추가</pre></div>
+  </div>
+  <p class="note"><code>해석</code> 현재 대화형 최적점은 가장 큰 모델을 억지로 적재하는 설정이 아니라,
+  응답 속도와 512MiB 운영 여유를 함께 지키는 1.7B FP16이다. 4B AWQ는 용량 우선 목표의 조건부 후보로 남긴다.</p>
 
   <h2>측정 방법</h2>
   <div class="two">
     <div class="card"><h3>성능 계약</h3><p>고정 revision, seed 42, context 1024, sequence 1,
-    warm-up 3회 후 5개 prompt × 4 round = 20회, concurrency 1.</p></div>
-    <div class="card"><h3>정확성 계약</h3><p>산술·지시 준수·JSON·코드·멀티턴·Kubernetes·안전 9개를
-    exact/keyword/JSON/길이 규칙으로 채점. 1.7B 6/9, 4B AWQ 5/9.</p></div>
+    thinking off와 workload hash를 기록했다. short 구성은 60요청을 독립 3회씩 반복하고
+    long/shared-prefix/concurrency 시나리오를 분리했다.</p></div>
+    <div class="card"><h3>정확성 계약</h3><p>1.7B는 30개 규칙으로 채점했다.
+    동일 30-case 비교에서 1.7B FP16은 18/30(60.0%), 4B AWQ는 17/30(56.7%)를 통과했다.
+    paired 결과는 둘 다 통과 14건, 1.7B만 4건, 4B만 3건, 둘 다 실패 9건이다.</p></div>
   </div>
   <p>TPOT는 <code>(E2E - TTFT) / (output tokens - 1)</code>로 계산했다.
+  이는 요청별 평균 time per output token이며 직접 수집한 inter-token latency가 아니다.
   전력은 단일 <code>nvidia-smi --loop-ms=500</code> 프로세스로 샘플링해 요청 부하를 줄였다.
   응답 본문은 artifact에 저장하지 않고 request별 latency·usage와 품질 answer hash만 저장했다.</p>
 
@@ -145,7 +561,7 @@
     <li><code>benchmarks/summarize.py</code>: TPOT, 시간당 토큰, goodput, SLO, 에너지와 예상 비용을 계산한다.</li>
     <li><code>evals/runner.py</code>: exact·keyword·JSON 계약으로 두 모델을 같은 기준에서 채점한다.</li>
     <li><code>apps/gateway/schemas.py</code>: OpenAI 호환 <code>stream_options.include_usage</code>를 허용한다.</li>
-    <li><code>values.yaml</code>: 실측으로 고른 GPU memory utilization 0.80을 GitOps 기본값으로 고정한다.</li>
+    <li><code>values.yaml</code>: 반복 실측으로 고른 GPU memory utilization 0.75와 prefix cache를 GitOps 기본값으로 고정한다.</li>
     <li><code>scripts/start.ps1</code>: Gateway rollout 뒤 Windows 포워드를 자동 재연결한다.</li>
   </ul>
 
@@ -170,7 +586,11 @@ task -d stacks/wsl2-gpu perf-report</pre>
   <h2>근거와 해석</h2>
   <ul>
     <li><a href="https://docs.vllm.ai/en/stable/benchmarking/cli/">vLLM benchmark metrics</a> · TTFT/TPOT/throughput 정의</li>
-    <li><a href="https://docs.vllm.ai/en/v0.16.0/features/quantization/">vLLM quantization hardware table</a> · Turing AWQ 지원 확인</li>
+    <li><a href="https://docs.vllm.ai/en/stable/features/quantization/">vLLM quantization hardware table</a> · Turing AWQ/GPTQ 지원 범위</li>
+    <li><a href="https://docs.vllm.ai/en/stable/features/">vLLM feature compatibility</a> · hardware별 기능 지원 범위</li>
+    <li><a href="https://docs.nvidia.com/cuda/wsl-user-guide/">NVIDIA CUDA on WSL guide</a> · Windows driver를 WSL에 전달하고 Linux display driver를 설치하지 않는 원칙</li>
+    <li><a href="https://kserve.github.io/website/docs/admin-guide/kubernetes-deployment">KServe Standard Mode</a> · Deployment와 Service 기반 Kubernetes 배포</li>
+    <li><a href="https://argo-cd.readthedocs.io/en/stable/user-guide/auto_sync/">Argo CD automated sync</a> · CI가 cluster API에 접속하지 않는 pull-based 배포</li>
     <li><a href="https://huggingface.co/Qwen/Qwen3-4B-AWQ/commit/74d4bd2bd4bff9cafc9345221320bffb08b406a3">Qwen3-4B-AWQ pinned revision</a></li>
     <li><a href="https://github.com/rlaope/estudy/blob/master/MLOps/sglang.md">SGLang serving casebook</a> · 시뮬레이션 수치는 쓰지 않고 SLO → 측정 → 튜닝 → 재측정 순서만 차용</li>
     <li><a href="https://github.com/rlaope/estudy/blob/master/AI/llm_serving_opt.md">LLM serving optimization notes</a> · goodput, shared prefix, 측정 우선 원칙</li>

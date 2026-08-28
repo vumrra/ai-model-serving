@@ -24,13 +24,16 @@ def test_local_mlx_chart_uses_standard_kserve_without_gpu() -> None:
     documents = render("values-local-mlx-cpu.yaml")
     runtime = next(item for item in documents if item["kind"] == "ServingRuntime")
     service = next(item for item in documents if item["kind"] == "InferenceService")
+    annotations = service["metadata"]["annotations"]
 
     container = runtime["spec"]["containers"][0]  # type: ignore[index]
     assert container["image"] == "qwen-mlx-cpu:local"
     assert container["resources"]["requests"] == {"cpu": "2", "memory": "4Gi"}
     assert "nvidia.com/gpu" not in container["resources"]["limits"]
     assert container["readinessProbe"]["httpGet"]["port"] == 8000
-    assert service["metadata"]["annotations"]["serving.kserve.io/deploymentMode"] == "Standard"
+    assert annotations["serving.kserve.io/deploymentMode"] == "Standard"
+    assert annotations["serving.kserve.io/autoscalerClass"] == "none"
+    assert "serving.kserve.io/autoscaler-class" not in annotations
     assert service["spec"]["predictor"]["deploymentStrategy"]["type"] == "Recreate"
     assert service["spec"]["predictor"]["model"]["runtime"] == "qwen-mlx-cpu"
     assert service["spec"]["predictor"]["model"]["modelFormat"]["name"] == "huggingface"

@@ -149,11 +149,65 @@ tasks:
         --label thinking=false
         --label slo_ttft_p95_ms=1000
         --label slo_tpot_p95_ms=100
-        --label slo_gpu_peak_mib=5632
+        --label slo_gpu_peak_mib=5454
+        --label slo_gpu_free_min_mib=512
+        --label electricity_krw_per_kwh=200
+
+  perf-capacity-4b:
+    desc: 별도로 4B AWQ를 올린 endpoint에서만 future capacity gate를 재측정합니다.
+    requires:
+      vars: [PERF_BASE_URL]
+    cmds:
+      - >-
+        uv run python -m benchmarks.runner
+        --endpoint "${PERF_BASE_URL}/v1/chat/completions"
+        --workload "{{.TASKFILE_DIR}}/benchmarks/chat-single-raw.yaml"
+        --engine vllm-v0-xformers-graph-prefix-cache
+        --model qwen3-4b-awq
+        --model-revision 74d4bd2bd4bff9cafc9345221320bffb08b406a3
+        --output "{{.TASKFILE_DIR}}/artifacts/performance/study/qwen3-4b-awq-util075-short-c1-${PERF_RUN_ID:-latest}.json"
+        --label config_id=qwen3-4b-awq-util075-seq1-graph-prefix-on
+        --label quantization=awq
+        --label gpu_memory_utilization=0.75
+        --label enable_prefix_caching=true
+        --label max_model_len=1024
+        --label max_num_seqs=1
+        --label thinking=false
+        --label slo_ttft_p95_ms=1000
+        --label slo_tpot_p95_ms=200
+        --label slo_gpu_peak_mib=5710
+        --label slo_gpu_free_min_mib=256
+
+  perf-soak:
+    desc: 최종 설정을 72회 반복해 장시간 안정성을 검증합니다.
+    cmds:
+      - >-
+        uv run python -m benchmarks.runner
+        --endpoint "${PERF_BASE_URL:-http://127.0.0.1:8005}/v1/chat/completions"
+        --workload "{{.TASKFILE_DIR}}/benchmarks/chat-single-raw.yaml"
+        --engine vllm-v0-xformers-graph-prefix-cache
+        --model qwen3-1.7b
+        --model-revision 70d244cc86ccca08cf5af4e1e306ecf908b1ad5e
+        --concurrency 1
+        --rounds 72
+        --output "{{.TASKFILE_DIR}}/artifacts/performance/study/qwen3-1.7b-fp16-util075-final-soak-c1.json"
+        --label config_id=qwen3-1.7b-fp16-util075-seq1-graph-prefix-on
+        --label test_kind=final_soak
+        --label quantization=none
+        --label enforce_eager=false
+        --label gpu_memory_utilization=0.75
+        --label enable_prefix_caching=true
+        --label max_model_len=1024
+        --label max_num_seqs=1
+        --label thinking=false
+        --label slo_ttft_p95_ms=1000
+        --label slo_tpot_p95_ms=100
+        --label slo_gpu_peak_mib=5454
+        --label slo_gpu_free_min_mib=512
         --label electricity_krw_per_kwh=200
 
   perf-quality:
-    desc: 선택한 모델의 고정 채팅 품질 계약 30개를 실행하고 실패도 저장합니다.
+    desc: 선택한 모델의 30개 품질 계약을 실행합니다. 다음 결과는 revision·config ID·suite SHA를 metadata로 함께 기록해야 비교 근거로 사용합니다.
     cmds:
       - >-
         uv run python -m evals.runner

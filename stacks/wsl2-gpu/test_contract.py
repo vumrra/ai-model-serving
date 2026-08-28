@@ -58,6 +58,7 @@ def test_wsl2_gpu_contract() -> None:
     service = next(item for item in documents if item["kind"] == "InferenceService")
     cache = next(item for item in documents if item["kind"] == "PersistentVolumeClaim")
     container = runtime["spec"]["containers"][0]  # type: ignore[index]
+    annotations = service["metadata"]["annotations"]
 
     assert container["image"] == (
         "docker.io/vllm/vllm-openai:v0.8.5@sha256:"
@@ -94,7 +95,9 @@ def test_wsl2_gpu_contract() -> None:
             "readOnly": True,
         },
     ]
-    assert service["metadata"]["annotations"]["serving.kserve.io/deploymentMode"] == ("Standard")
+    assert annotations["serving.kserve.io/deploymentMode"] == "Standard"
+    assert annotations["serving.kserve.io/autoscalerClass"] == "none"
+    assert "serving.kserve.io/autoscaler-class" not in annotations
     assert service["spec"]["predictor"]["deploymentStrategy"]["type"] == "Recreate"
     assert service["spec"]["predictor"]["minReplicas"] == 1
     assert service["spec"]["predictor"]["maxReplicas"] == 1
@@ -120,6 +123,36 @@ def test_wsl2_tasks_keep_endpoints_local_and_cluster_deletion_explicit() -> None
     assert "gpu_memory_utilization=0.75" in benchmark
     assert "enable_prefix_caching=true" in benchmark
     assert "${PERF_RUN_ID:-latest}" in benchmark
+    soak = tasks["perf-soak"]["cmds"][0]
+    assert "${PERF_BASE_URL:-http://127.0.0.1:8005}/v1/chat/completions" in soak
+    assert "benchmarks/chat-single-raw.yaml" in soak
+    assert "--engine vllm-v0-xformers-graph-prefix-cache" in soak
+    assert "--model qwen3-1.7b" in soak
+    assert "--model-revision 70d244cc86ccca08cf5af4e1e306ecf908b1ad5e" in soak
+    assert "--concurrency 1" in soak
+    assert "--rounds 72" in soak
+    assert "study/qwen3-1.7b-fp16-util075-final-soak-c1.json" in soak
+    assert "config_id=qwen3-1.7b-fp16-util075-seq1-graph-prefix-on" in soak
+    assert "test_kind=final_soak" in soak
+    assert "quantization=none" in soak
+    assert "enforce_eager=false" in soak
+    assert "gpu_memory_utilization=0.75" in soak
+    assert "enable_prefix_caching=true" in soak
+    assert "max_model_len=1024" in soak
+    assert "max_num_seqs=1" in soak
+    assert "thinking=false" in soak
+    assert "slo_ttft_p95_ms=1000" in soak
+    assert "slo_tpot_p95_ms=100" in soak
+    assert "slo_gpu_peak_mib=5454" in soak
+    assert "slo_gpu_free_min_mib=512" in soak
+    assert "electricity_krw_per_kwh=200" in soak
+    capacity = tasks["perf-capacity-4b"]
+    capacity_command = capacity["cmds"][0]
+    assert capacity["requires"]["vars"] == ["PERF_BASE_URL"]
+    assert "--model qwen3-4b-awq" in capacity_command
+    assert "--model-revision 74d4bd2bd4bff9cafc9345221320bffb08b406a3" in capacity_command
+    assert "slo_gpu_peak_mib=5710" in capacity_command
+    assert "slo_gpu_free_min_mib=256" in capacity_command
     quality = tasks["perf-quality"]
     quality_command = quality["cmds"][0]
     assert "30개" in quality["desc"]
@@ -272,13 +305,20 @@ def test_performance_report_is_reproducible(tmp_path: Path) -> None:
     )
 
     report = output.read_text(encoding="utf-8")
+    assert output.read_bytes() == (STACK / "artifacts/performance/report.html").read_bytes()
     assert "GTX 1660 LLM 서빙 실측 보고서" in report
     assert "시간당 출력 토큰" in report
     assert "원/백만 출력 토큰" in report
-    assert "실제 배포 경로 검증" in report
+    assert "이전 Gateway E2E · util 0.80 단일 실행" in report
     assert "37,259" in report
     assert "265.1" in report
     assert "MLOps/sglang.md" in report
     assert "JaeoneLim/nano-kpu" in report
     assert "qwen3-1.7b" in report
     assert "qwen3-4b-awq" in report
+    assert "4B 개별 요청 충족은 178/180" in report
+    assert "보수 free 약 521MiB" in report
+    assert (
+        "최종 util 0.75 + prefix cache 구성의 Gateway E2E 비교는 아직 재측정하지 않았으므로"
+        in report
+    )

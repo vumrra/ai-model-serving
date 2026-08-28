@@ -34,6 +34,7 @@ class GpuSample:
     power_w: float
     memory_used_mib: float
     utilization_pct: float
+    memory_free_mib: float | None = None
     temperature_c: float | None = None
     graphics_clock_mhz: float | None = None
     sm_clock_mhz: float | None = None
@@ -49,12 +50,13 @@ class NvidiaSmiSampler:
         self.samples: list[GpuSample] = []
         self._process: subprocess.Popen[str] | None = None
         self._thread: threading.Thread | None = None
+        self._lock = threading.Lock()
 
     def start(self) -> None:
         command = [
             "nvidia-smi",
             (
-                "--query-gpu=power.draw,memory.used,utilization.gpu,"
+                "--query-gpu=power.draw,memory.used,memory.free,utilization.gpu,"
                 "temperature.gpu,clocks.gr,clocks.sm"
             ),
             "--format=csv,noheader,nounits",
@@ -88,53 +90,66 @@ class NvidiaSmiSampler:
     def _collect(self) -> None:
         if self._process is None or self._process.stdout is None:
             return
-        for line in self._process.stdout:
-            values = [value.strip() for value in line.split(",")]
-            if len(values) != 6:
-                continue
-            try:
-                power_w, memory_used_mib, utilization_pct = (float(value) for value in values[:3])
-            except ValueError:
-                continue
-            system_memory_used_mib, system_swap_used_mib = read_system_memory()
-            self.samples.append(
-                GpuSample(
-                    power_w=power_w,
-                    memory_used_mib=memory_used_mib,
-                    utilization_pct=utilization_pct,
-                    temperature_c=_optional_float(values[3]),
-                    graphics_clock_mhz=_optional_float(values[4]),
-                    sm_clock_mhz=_optional_float(values[5]),
-                    system_memory_used_mib=system_memory_used_mib,
-                    system_swap_used_mib=system_swap_used_mib,
+        while True:
+            with self._lock:
+                line = self._process.stdout.readline()
+                if not line:
+                    return
+                values = [value.strip() for value in line.split(",")]
+                if len(values) != 7:
+                    continue
+                try:
+                    power_w, memory_used_mib, memory_free_mib, utilization_pct = (
+                        float(value) for value in values[:4]
+                    )
+                except ValueError:
+                    continue
+                system_memory_used_mib, system_swap_used_mib = read_system_memory()
+                self.samples.append(
+                    GpuSample(
+                        power_w=power_w,
+                        memory_used_mib=memory_used_mib,
+                        utilization_pct=utilization_pct,
+                        memory_free_mib=memory_free_mib,
+                        temperature_c=_optional_float(values[4]),
+                        graphics_clock_mhz=_optional_float(values[5]),
+                        sm_clock_mhz=_optional_float(values[6]),
+                        system_memory_used_mib=system_memory_used_mib,
+                        system_swap_used_mib=system_swap_used_mib,
+                    )
                 )
-            )
+
+    def clear(self) -> None:
+        with self._lock:
+            self.samples.clear()
 
     def summary(self) -> dict[str, float | int | None]:
-        result: dict[str, float | int | None] = {"gpu_samples": len(self.samples)}
+        with self._lock:
+            samples = list(self.samples)
+        result: dict[str, float | int | None] = {"gpu_samples": len(samples)}
         series = {
-            "gpu_power_w": [sample.power_w for sample in self.samples],
-            "gpu_memory_used_mib": [sample.memory_used_mib for sample in self.samples],
-            "gpu_utilization_pct": [sample.utilization_pct for sample in self.samples],
+            "gpu_power_w": [sample.power_w for sample in samples],
+            "gpu_memory_used_mib": [sample.memory_used_mib for sample in samples],
+            "gpu_utilization_pct": [sample.utilization_pct for sample in samples],
             "gpu_temperature_c": [
-                sample.temperature_c for sample in self.samples if sample.temperature_c is not None
+                sample.temperature_c for sample in samples if sample.temperature_c is not None
             ],
             "gpu_graphics_clock_mhz": [
                 sample.graphics_clock_mhz
-                for sample in self.samples
+                for sample in samples
                 if sample.graphics_clock_mhz is not None
             ],
             "gpu_sm_clock_mhz": [
-                sample.sm_clock_mhz for sample in self.samples if sample.sm_clock_mhz is not None
+                sample.sm_clock_mhz for sample in samples if sample.sm_clock_mhz is not None
             ],
             "system_memory_used_mib": [
                 sample.system_memory_used_mib
-                for sample in self.samples
+                for sample in samples
                 if sample.system_memory_used_mib is not None
             ],
             "system_swap_used_mib": [
                 sample.system_swap_used_mib
-                for sample in self.samples
+                for sample in samples
                 if sample.system_swap_used_mib is not None
             ],
         }
@@ -142,6 +157,10 @@ class NvidiaSmiSampler:
             result[f"{name}_mean"] = statistics.fmean(values) if values else None
             result[f"{name}_p95"] = _p95(values)
             result[f"{name}_peak"] = max(values) if values else None
+        memory_free = [
+            sample.memory_free_mib for sample in samples if sample.memory_free_mib is not None
+        ]
+        result["gpu_memory_free_mib_min"] = min(memory_free) if memory_free else None
         return result
 
 
@@ -378,27 +397,30 @@ async def execute(
         max_keepalive_connections=concurrency,
     )
     async with httpx.AsyncClient(timeout=timeout, limits=limits) as client:
-        for case in cases[:warmup]:
-            result = await run_case(client, endpoint, case, headers)
-            if not result.success:
-                raise RuntimeError("warmup_failed")
-
-        semaphore = asyncio.Semaphore(concurrency)
-
-        async def bounded(case: RequestCase) -> RequestResult:
-            async with semaphore:
-                return await run_case(client, endpoint, case, headers)
-
         if gpu_sampler is not None:
             gpu_sampler.start()
-        measurement_started = time.perf_counter()
         try:
+            for case in cases[:warmup]:
+                result = await run_case(client, endpoint, case, headers)
+                if not result.success:
+                    raise RuntimeError("warmup_failed")
+
+            if gpu_sampler is not None:
+                gpu_sampler.clear()
+
+            semaphore = asyncio.Semaphore(concurrency)
+
+            async def bounded(case: RequestCase) -> RequestResult:
+                async with semaphore:
+                    return await run_case(client, endpoint, case, headers)
+
+            measurement_started = time.perf_counter()
             results = await asyncio.gather(*(bounded(case) for case in cases))
-        finally:
             duration_seconds = time.perf_counter() - measurement_started
+            return results, duration_seconds
+        finally:
             if gpu_sampler is not None:
                 gpu_sampler.stop()
-        return results, duration_seconds
 
 
 def collect_environment(labels: list[str]) -> dict[str, Any]:
@@ -448,6 +470,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--rounds", type=_positive_int)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--api-key-env", default="OPENAI_API_KEY")
+    parser.add_argument("--disable-gpu-sampler", action="store_true")
     parser.add_argument("--label", action="append", default=[])
     return parser
 
@@ -461,7 +484,7 @@ def main(argv: list[str] | None = None) -> int:
         raise ValueError("model must be set in workload defaults or --model")
 
     started_at = utc_now()
-    gpu_sampler = NvidiaSmiSampler()
+    gpu_sampler = None if args.disable_gpu_sampler else NvidiaSmiSampler()
     results, duration_seconds = asyncio.run(
         execute(
             endpoint=args.endpoint,
@@ -473,7 +496,11 @@ def main(argv: list[str] | None = None) -> int:
     environment = collect_environment(args.label)
     environment["benchmark_duration_seconds"] = duration_seconds
     environment.update(workload_metadata(workload))
-    environment.update(gpu_sampler.summary())
+    if gpu_sampler is None:
+        environment["gpu_sampler"] = "disabled"
+    else:
+        environment["gpu_sampler"] = "started-before-warmup-cleared-before-measurement"
+        environment.update(gpu_sampler.summary())
     run = BenchmarkRun(
         schema_version=1,
         run_id=uuid.uuid4().hex,

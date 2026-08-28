@@ -45,6 +45,8 @@ def summarize_run(run: BenchmarkRun) -> dict[str, Any]:
     tpot_slo = _number(run.environment.get("slo_tpot_p95_ms"))
     gpu_peak = _number(run.environment.get("gpu_memory_used_mib_peak"))
     gpu_peak_slo = _number(run.environment.get("slo_gpu_peak_mib"))
+    gpu_free_min = _number(run.environment.get("gpu_memory_free_mib_min"))
+    gpu_free_min_slo = _number(run.environment.get("slo_gpu_free_min_mib"))
     system_memory_peak = _number(run.environment.get("system_memory_used_mib_peak"))
     system_memory_peak_slo = _number(run.environment.get("slo_system_memory_peak_mib"))
     system_swap_peak = _number(run.environment.get("system_swap_used_mib_peak"))
@@ -63,6 +65,10 @@ def summarize_run(run: BenchmarkRun) -> dict[str, Any]:
         and _within_slo(ttft_summary["p95"], ttft_slo)
         and _within_slo(tpot_summary["p95"], tpot_slo)
         and _within_slo(gpu_peak, gpu_peak_slo)
+        and (
+            gpu_free_min_slo is None
+            or (gpu_free_min is not None and gpu_free_min >= gpu_free_min_slo)
+        )
         and _within_slo(system_memory_peak, system_memory_peak_slo)
         and _within_slo(system_swap_peak, system_swap_peak_slo)
     )
@@ -96,6 +102,7 @@ def summarize_run(run: BenchmarkRun) -> dict[str, Any]:
             "ttft_p95_ms": ttft_slo,
             "tpot_p95_ms": tpot_slo,
             "gpu_peak_mib": gpu_peak_slo,
+            "gpu_free_min_mib": gpu_free_min_slo,
             "system_memory_peak_mib": system_memory_peak_slo,
             "system_swap_peak_mib": system_swap_peak_slo,
             "requests_met": good_requests,
@@ -110,6 +117,7 @@ def summarize_run(run: BenchmarkRun) -> dict[str, Any]:
             "memory_used_mib_mean": _number(run.environment.get("gpu_memory_used_mib_mean")),
             "memory_used_mib_p95": _number(run.environment.get("gpu_memory_used_mib_p95")),
             "memory_used_mib_peak": gpu_peak,
+            "memory_free_mib_min": gpu_free_min,
             "utilization_pct_mean": _number(run.environment.get("gpu_utilization_pct_mean")),
             "utilization_pct_p95": _number(run.environment.get("gpu_utilization_pct_p95")),
             "utilization_pct_peak": _number(run.environment.get("gpu_utilization_pct_peak")),
