@@ -75,7 +75,8 @@ def test_wsl2_gpu_contract() -> None:
         "--max-num-seqs",
         "1",
         "--gpu-memory-utilization",
-        "0.80",
+        "0.75",
+        "--enable-prefix-caching",
         "--swap-space",
         "0",
         "--served-model-name",
@@ -113,6 +114,21 @@ def test_wsl2_tasks_keep_endpoints_local_and_cluster_deletion_explicit() -> None
     assert "--address 127.0.0.1" in tasks["argocd-forward"]["cmds"][0]
     assert "minikube delete" not in taskfile_text
     assert "s|targetRevision: main|targetRevision: {{.GIT_REVISION}}|" in taskfile_text
+    benchmark = tasks["perf-benchmark"]["cmds"][0]
+    assert "--engine vllm-v0-xformers-graph-prefix-cache" in benchmark
+    assert "config_id=qwen3-1.7b-fp16-util075-seq1-graph-prefix-on" in benchmark
+    assert "gpu_memory_utilization=0.75" in benchmark
+    assert "enable_prefix_caching=true" in benchmark
+    assert "${PERF_RUN_ID:-latest}" in benchmark
+    quality = tasks["perf-quality"]
+    quality_command = quality["cmds"][0]
+    assert "30개" in quality["desc"]
+    assert "--allow-failures" in quality_command
+    assert "study/qwen3-1.7b-fp16-quality-30.json" in quality_command
+    startup = " ".join(tasks["perf-startup"]["cmds"])
+    assert "benchmarks.startup /dev/stdin" in startup
+    assert "study/startup-qwen3-1.7b-util075-prefix-on.json" in startup
+    assert "artifacts/performance/report.html" in tasks["perf-report"]["desc"]
 
     smoke = yaml.safe_load((STACK / "gpu-smoke.yaml").read_text(encoding="utf-8"))
     container = smoke["spec"]["containers"][0]
@@ -187,6 +203,14 @@ def test_gitops_apps_pull_git_without_cluster_credentials_in_ci() -> None:
     assert {(item["server"], item["namespace"]) for item in project["spec"]["destinations"]} >= {
         ("https://kubernetes.default.svc", "kube-system")
     }
+    kserve = next(item for item in applications if item["metadata"]["name"] == "qwen-kserve")
+    controller_values = kserve["spec"]["source"]["helm"]["valuesObject"]["kserve"]["controller"]
+    assert kserve["spec"]["source"]["targetRevision"] == "v0.19.0"
+    assert controller_values["resources"] == {"limits": {"cpu": "500m"}}
+    manual_values = yaml.safe_load(
+        (ROOT / "deploy/kubernetes/kserve-values.yaml").read_text(encoding="utf-8")
+    )
+    assert manual_values["kserve"]["controller"]["resources"] == controller_values["resources"]
     model = next(item for item in applications if item["metadata"]["name"] == "qwen-model")
     assert model["spec"]["sources"][0]["targetRevision"] == "codex/windows-gpu"
     assert model["spec"]["ignoreDifferences"] == [

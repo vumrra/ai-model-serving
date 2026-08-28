@@ -23,7 +23,7 @@ prompts:
         content: &platform_context |
           다음은 GPU 추론 플랫폼의 공통 운영 문맥이다. Windows 호스트의 NVIDIA 드라이버가 WSL2에 GPU를 전달하며 WSL 안에는 별도 Linux GPU 드라이버를 설치하지 않는다. Ubuntu 위 Docker Desktop과 Minikube Docker driver가 Kubernetes를 실행하고 NVIDIA device plugin이 nvidia.com/gpu 리소스를 노출한다.
 
-          KServe는 Standard Mode로 동작한다. 모델 Pod는 replica 1, Recreate 전략, GPU 1개, 메모리 캐시 PVC와 /dev/shm을 사용한다. vLLM은 Qwen3-1.7B revision 고정, float16, 최대 문맥 1024, 최대 시퀀스 1, thinking 비활성, GPU memory utilization 0.80으로 실행한다. 양자화, CPU offload, swap, Istio, Knative는 사용하지 않는다.
+          KServe는 Standard Mode로 동작한다. 모델 Pod는 replica 1, Recreate 전략, GPU 1개, 메모리 캐시 PVC와 /dev/shm을 사용한다. vLLM은 Qwen3-1.7B revision 고정, float16, 최대 문맥 1024, 최대 시퀀스 1, thinking 비활성, GPU memory utilization 0.75와 prefix caching 활성으로 실행한다. 양자화, CPU offload, swap, Istio, Knative는 사용하지 않는다.
 
           클라이언트는 Windows 사설 LAN 8000 포트의 FastAPI Gateway만 호출한다. Gateway는 API key 인증, rate limit, 요청 형식 검증, qwen-demo를 실제 모델명으로 변환, thinking 비활성 강제, JSON과 SSE streaming 중계를 담당한다. predictor Service와 vLLM 원본 API, Kubernetes API, Argo CD는 외부에 공개하지 않는다.
 

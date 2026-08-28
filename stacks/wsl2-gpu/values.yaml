@@ -18,7 +18,8 @@ runtime:
     - --max-num-seqs
     - "1"
     - --gpu-memory-utilization
-    - "0.80"
+    - "0.75"
+    - --enable-prefix-caching
     - --swap-space
     - "0"
     - --served-model-name

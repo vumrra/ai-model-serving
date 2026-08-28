@@ -11,7 +11,7 @@ Client -> Windows TCP 8000 -> FastAPI Gateway -> KServe -> vLLM -> Qwen3-1.7B
 - GPU: GTX 1660 6GB, `nvidia.com/gpu: 1`
 - vLLM: `v0.8.5@sha256:6cf9808c...a33d33`
 - 모델 리비전: `70d244cc...b1ad5e`
-- FP16, 컨텍스트 1024, 시퀀스 1, GPU 메모리 사용률 0.80
+- FP16, 컨텍스트 1024, 시퀀스 1, GPU 메모리 사용률 0.75, prefix caching 활성
 - WSL2 메모리 10GB, swap 4GB, Minikube 메모리 8GB
 - Web UI, 양자화, CPU 오프로딩, Knative, Istio 없음
 
@@ -141,25 +141,26 @@ API 주소는 `http://<WINDOWS_LAN_IP>:8000/v1`이다. 모든 요청에 기존 G
 
 ## 성능 재현
 
-첫 번째 WSL 터미널에서 진단용 vLLM 포트를 연 뒤 두 번째 터미널에서 실행한다.
+첫 번째 WSL 터미널에서 진단용 vLLM 포트를 연 뒤 두 번째 터미널에서 최종 `0.75/prefix-on` 설정을 재현한다.
 
 ```bash
 task -d stacks/wsl2-gpu kserve-forward
 
-task -d stacks/wsl2-gpu perf-benchmark
+PERF_RUN_ID=run4 task -d stacks/wsl2-gpu perf-benchmark
 task -d stacks/wsl2-gpu perf-quality
+task -d stacks/wsl2-gpu perf-startup
 task -d stacks/wsl2-gpu perf-report
 ```
 
-결과는 `stacks/wsl2-gpu/artifacts/performance/`에 저장된다. 대표 결과는 다음과 같다.
+`PERF_RUN_ID`를 생략하면 benchmark는 `latest`에 저장된다. 품질 점수가 만점이 아니어도 30개 결과와 Wilson 95% 신뢰구간을 저장하며, startup Task는 원본 Pod JSON을 남기지 않는다.
 
-- TTFT p95 482.1ms, TPOT p95 90.2ms
-- 출력 10.41 tok/s, 시간당 37,458 output tokens
-- VRAM peak 5,565MiB, GPU 전력 평균 49.5W
-- GPU 전력 기준 약 264.5원/백만 output tokens (200원/kWh 가정)
-- 실제 Gateway 경로 20/20 성공, 시간당 37,259 output tokens, raw 대비 처리량 관측 차이 0.53%
+주요 artifact:
 
-상세 비교와 판단 근거는 [GTX 1660 LLM 서빙 실측 보고서](artifacts/performance/report.html)에 있다.
+- 최종 단기 성능 3회: [run1](artifacts/performance/study/qwen3-1.7b-fp16-util075-short-c1-run1.json), [run2](artifacts/performance/study/qwen3-1.7b-fp16-util075-short-c1-run2.json), [run3](artifacts/performance/study/qwen3-1.7b-fp16-util075-short-c1-run3.json)
+- 공유 prefix: [prefix-on 결과](artifacts/performance/study/qwen3-1.7b-fp16-util075-shared-prefix-on-c1.json)
+- 품질 30개: [quality 결과](artifacts/performance/study/qwen3-1.7b-fp16-quality-30.json)
+- warm startup: [startup 결과](artifacts/performance/study/startup-qwen3-1.7b-util075-prefix-on.json)
+- 상세 판단: [GTX 1660 LLM 서빙 실측 보고서](artifacts/performance/report.html)
 
 ## 관리 화면
 

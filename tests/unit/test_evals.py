@@ -2,7 +2,15 @@ import json
 from collections import Counter
 from pathlib import Path
 
-from evals.runner import build_report, grade, load_cases, main, wilson_95
+from evals.runner import build_report, chat_completions_url, grade, load_cases, main, wilson_95
+
+
+def test_chat_completions_url_accepts_host_or_v1_base():
+    expected = "http://127.0.0.1:8005/v1/chat/completions"
+    assert chat_completions_url("http://127.0.0.1:8005") == expected
+    assert chat_completions_url("http://127.0.0.1:8005/") == expected
+    assert chat_completions_url("http://127.0.0.1:8005/v1") == expected
+    assert chat_completions_url("http://127.0.0.1:8005/v1/") == expected
 
 
 def test_grade_reports_quality_failures():

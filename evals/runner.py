@@ -19,6 +19,13 @@ def load_cases(path: Path) -> list[dict[str, Any]]:
     return suite["cases"]
 
 
+def chat_completions_url(base_url: str) -> str:
+    root = base_url.rstrip("/")
+    if root.endswith("/v1"):
+        return f"{root}/chat/completions"
+    return f"{root}/v1/chat/completions"
+
+
 def grade(case: dict[str, Any], answer: str) -> list[str]:
     failures: list[str] = []
     required = case.get("required_any", [])
@@ -124,7 +131,7 @@ def main(argv: list[str] | None = None) -> int:
             if args.disable_thinking:
                 payload["chat_template_kwargs"] = {"enable_thinking": False}
             response = client.post(
-                f"{args.base_url.rstrip('/')}/v1/chat/completions",
+                chat_completions_url(args.base_url),
                 json=payload,
             )
             response.raise_for_status()
