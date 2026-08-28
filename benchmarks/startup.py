@@ -46,9 +46,7 @@ def summarize_pod(pod: dict[str, Any]) -> dict[str, Any]:
             "namespace": metadata.get("namespace"),
             "phase": status.get("phase"),
             "container_count": len(container_statuses),
-            "restart_count": sum(
-                int(item.get("restartCount", 0)) for item in container_statuses
-            ),
+            "restart_count": sum(int(item.get("restartCount", 0)) for item in container_statuses),
         },
         "milestones": {
             "created_at": metadata.get("creationTimestamp"),

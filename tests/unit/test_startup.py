@@ -28,15 +28,11 @@ def test_summarize_pod_reports_startup_milestones() -> None:
             "containerStatuses": [
                 {
                     "restartCount": 1,
-                    "state": {
-                        "running": {"startedAt": "2026-08-28T01:00:10Z"}
-                    },
+                    "state": {"running": {"startedAt": "2026-08-28T01:00:10Z"}},
                 },
                 {
                     "restartCount": 0,
-                    "state": {
-                        "running": {"startedAt": "2026-08-28T01:00:12Z"}
-                    },
+                    "state": {"running": {"startedAt": "2026-08-28T01:00:12Z"}},
                 },
             ],
         },
