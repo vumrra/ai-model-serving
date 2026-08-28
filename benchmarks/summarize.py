@@ -35,6 +35,9 @@ def summarize_run(run: BenchmarkRun) -> dict[str, Any]:
         if completion_tokens and duration_seconds and duration_seconds > 0
         else None
     )
+    request_tps = _per_second(len(successful), duration_seconds)
+    input_tps = _per_second(prompt_tokens, duration_seconds)
+    total_tps = _per_second(prompt_tokens + completion_tokens, duration_seconds)
     ttft_summary = _latency_summary(ttft)
     tpot_summary = _latency_summary(tpot)
     success_rate = len(successful) / len(run.results) if run.results else 0.0
@@ -42,6 +45,10 @@ def summarize_run(run: BenchmarkRun) -> dict[str, Any]:
     tpot_slo = _number(run.environment.get("slo_tpot_p95_ms"))
     gpu_peak = _number(run.environment.get("gpu_memory_used_mib_peak"))
     gpu_peak_slo = _number(run.environment.get("slo_gpu_peak_mib"))
+    system_memory_peak = _number(run.environment.get("system_memory_used_mib_peak"))
+    system_memory_peak_slo = _number(run.environment.get("slo_system_memory_peak_mib"))
+    system_swap_peak = _number(run.environment.get("system_swap_used_mib_peak"))
+    system_swap_peak_slo = _number(run.environment.get("slo_system_swap_peak_mib"))
     good_requests = sum(
         result.success
         and (ttft_slo is None or (result.ttft_ms or math.inf) <= ttft_slo)
@@ -56,6 +63,8 @@ def summarize_run(run: BenchmarkRun) -> dict[str, Any]:
         and _within_slo(ttft_summary["p95"], ttft_slo)
         and _within_slo(tpot_summary["p95"], tpot_slo)
         and _within_slo(gpu_peak, gpu_peak_slo)
+        and _within_slo(system_memory_peak, system_memory_peak_slo)
+        and _within_slo(system_swap_peak, system_swap_peak_slo)
     )
 
     return {
@@ -77,22 +86,50 @@ def summarize_run(run: BenchmarkRun) -> dict[str, Any]:
                 else 0.0
             ),
         },
+        "request_throughput_requests_per_second": request_tps,
+        "input_throughput_tokens_per_second": input_tps,
         "output_throughput_tokens_per_second": output_tps,
+        "total_throughput_tokens_per_second": total_tps,
         "output_tokens_per_hour": output_tps * 3600 if output_tps is not None else None,
-        "goodput_requests_per_second": (
-            good_requests / duration_seconds if duration_seconds and duration_seconds > 0 else None
-        ),
+        "goodput_requests_per_second": _per_second(good_requests, duration_seconds),
         "slo": {
             "ttft_p95_ms": ttft_slo,
             "tpot_p95_ms": tpot_slo,
             "gpu_peak_mib": gpu_peak_slo,
+            "system_memory_peak_mib": system_memory_peak_slo,
+            "system_swap_peak_mib": system_swap_peak_slo,
+            "requests_met": good_requests,
+            "attainment_rate": good_requests / len(run.results) if run.results else 0.0,
             "pass": slo_pass,
         },
         "gpu": {
             "samples": run.environment.get("gpu_samples"),
             "power_w_mean": _number(run.environment.get("gpu_power_w_mean")),
+            "power_w_p95": _number(run.environment.get("gpu_power_w_p95")),
+            "power_w_peak": _number(run.environment.get("gpu_power_w_peak")),
+            "memory_used_mib_mean": _number(run.environment.get("gpu_memory_used_mib_mean")),
+            "memory_used_mib_p95": _number(run.environment.get("gpu_memory_used_mib_p95")),
             "memory_used_mib_peak": gpu_peak,
             "utilization_pct_mean": _number(run.environment.get("gpu_utilization_pct_mean")),
+            "utilization_pct_p95": _number(run.environment.get("gpu_utilization_pct_p95")),
+            "utilization_pct_peak": _number(run.environment.get("gpu_utilization_pct_peak")),
+            "temperature_c_mean": _number(run.environment.get("gpu_temperature_c_mean")),
+            "temperature_c_p95": _number(run.environment.get("gpu_temperature_c_p95")),
+            "temperature_c_peak": _number(run.environment.get("gpu_temperature_c_peak")),
+            "graphics_clock_mhz_mean": _number(run.environment.get("gpu_graphics_clock_mhz_mean")),
+            "graphics_clock_mhz_p95": _number(run.environment.get("gpu_graphics_clock_mhz_p95")),
+            "graphics_clock_mhz_peak": _number(run.environment.get("gpu_graphics_clock_mhz_peak")),
+            "sm_clock_mhz_mean": _number(run.environment.get("gpu_sm_clock_mhz_mean")),
+            "sm_clock_mhz_p95": _number(run.environment.get("gpu_sm_clock_mhz_p95")),
+            "sm_clock_mhz_peak": _number(run.environment.get("gpu_sm_clock_mhz_peak")),
+        },
+        "system": {
+            "memory_used_mib_mean": _number(run.environment.get("system_memory_used_mib_mean")),
+            "memory_used_mib_p95": _number(run.environment.get("system_memory_used_mib_p95")),
+            "memory_used_mib_peak": system_memory_peak,
+            "swap_used_mib_mean": _number(run.environment.get("system_swap_used_mib_mean")),
+            "swap_used_mib_p95": _number(run.environment.get("system_swap_used_mib_p95")),
+            "swap_used_mib_peak": system_swap_peak,
         },
         "energy": _energy_summary(run.environment, duration_seconds, completion_tokens, output_tps),
     }
@@ -120,6 +157,10 @@ def _number(value: Any) -> float | None:
         return None
 
 
+def _per_second(value: int, duration_seconds: float | None) -> float | None:
+    return value / duration_seconds if duration_seconds and duration_seconds > 0 else None
+
+
 def _energy_summary(
     environment: dict[str, Any],
     duration_seconds: float | None,
@@ -144,6 +185,9 @@ def _energy_summary(
         "estimated_gpu_cost_krw_per_million_output_tokens": (
             wh_per_1k * price if wh_per_1k is not None and price is not None else None
         ),
+        "estimated_gpu_cost_krw_per_hour": (
+            power_w * price / 1000 if power_w is not None and price is not None else None
+        ),
         "assumed_electricity_krw_per_kwh": price,
         "output_tps_for_estimate": output_tps,
     }
@@ -152,9 +196,12 @@ def _energy_summary(
 def _latency_summary(values: list[float]) -> dict[str, float | None]:
     return {
         "mean": statistics.fmean(values) if values else None,
+        "stdev": statistics.pstdev(values) if values else None,
+        "min": min(values) if values else None,
         "p50": percentile(values, 0.50),
         "p95": percentile(values, 0.95),
         "p99": percentile(values, 0.99),
+        "max": max(values) if values else None,
     }
 
 

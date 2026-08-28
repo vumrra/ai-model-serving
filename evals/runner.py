@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 from typing import Any
@@ -25,17 +26,24 @@ def grade(case: dict[str, Any], answer: str) -> list[str]:
         failures.append("required_keyword_missing")
     if any(word not in answer for word in case.get("required_all", [])):
         failures.append("required_keywords_missing")
-    if expected := case.get("exact"):
-        if answer.strip() != expected:
+    if "exact" in case:
+        if answer.strip() != case["exact"]:
             failures.append("exact_answer_mismatch")
-    if keys := case.get("json_keys"):
+    needs_json = bool(case.get("json_keys")) or "json_equals" in case
+    if needs_json:
         try:
             document = json.loads(answer)
         except json.JSONDecodeError:
             failures.append("invalid_json")
         else:
+            keys = case.get("json_keys", [])
             if not isinstance(document, dict) or any(key not in document for key in keys):
                 failures.append("json_keys_missing")
+            if "json_equals" in case:
+                if json.dumps(document, sort_keys=True) != json.dumps(
+                    case["json_equals"], sort_keys=True
+                ):
+                    failures.append("json_value_mismatch")
     if any(word in answer for word in case.get("prohibited", [])):
         failures.append("prohibited_text_found")
     if len(answer) > int(case.get("max_chars", 2_000)):
@@ -45,16 +53,61 @@ def grade(case: dict[str, Any], answer: str) -> list[str]:
     return failures
 
 
-def main() -> int:
+def wilson_95(successes: int, total: int) -> dict[str, float]:
+    if total == 0:
+        return {"lower": 0.0, "upper": 0.0}
+    z = 1.959963984540054
+    proportion = successes / total
+    denominator = 1 + z**2 / total
+    centre = (proportion + z**2 / (2 * total)) / denominator
+    margin = z * math.sqrt((proportion * (1 - proportion) + z**2 / (4 * total)) / total)
+    margin /= denominator
+    return {
+        "lower": round(max(0.0, centre - margin), 6),
+        "upper": round(min(1.0, centre + margin), 6),
+    }
+
+
+def build_report(model: str, thinking: bool, results: list[dict[str, Any]]) -> dict[str, Any]:
+    passed_count = sum(bool(item["passed"]) for item in results)
+    categories: dict[str, dict[str, Any]] = {}
+    for item in results:
+        category = str(item["category"])
+        stats = categories.setdefault(category, {"passed": 0, "total": 0})
+        stats["passed"] += int(bool(item["passed"]))
+        stats["total"] += 1
+    for stats in categories.values():
+        stats["score"] = stats["passed"] / stats["total"]
+        stats["wilson_95"] = wilson_95(stats["passed"], stats["total"])
+
+    return {
+        "model": model,
+        "thinking": thinking,
+        "passed": passed_count == len(results),
+        "passed_count": passed_count,
+        "total": len(results),
+        "score": passed_count / len(results) if results else 0.0,
+        "wilson_95": wilson_95(passed_count, len(results)),
+        "categories": categories,
+        "results": results,
+    }
+
+
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="공개 API의 작은 품질 회귀 suite를 실행합니다.")
     parser.add_argument("--base-url", required=True)
     parser.add_argument("--suite", type=Path, default=Path("evals/cases.yaml"))
     parser.add_argument("--model", default="qwen3-4b")
     parser.add_argument("--api-key-env", default="PUBLIC_API_KEY")
     parser.add_argument("--disable-thinking", action="store_true")
+    parser.add_argument(
+        "--allow-failures",
+        action="store_true",
+        help="실패 사례를 결과에 기록하되 프로세스는 성공으로 종료합니다.",
+    )
     parser.add_argument("--max-tokens", type=int, default=256)
     parser.add_argument("--output", type=Path, default=Path("evals/results/latest.json"))
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     headers = {}
     if api_key := os.getenv(args.api_key_env):
@@ -80,23 +133,18 @@ def main() -> int:
             results.append(
                 {
                     "id": case["id"],
+                    "category": case.get("category", "uncategorized"),
                     "passed": not failures,
                     "failures": failures,
                     "answer_sha256": hashlib.sha256(answer.encode()).hexdigest(),
                 }
             )
 
-    report = {
-        "model": args.model,
-        "thinking": not args.disable_thinking,
-        "passed": all(item["passed"] for item in results),
-        "score": sum(item["passed"] for item in results) / len(results),
-        "results": results,
-    }
+    report = build_report(args.model, not args.disable_thinking, results)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2), encoding="utf-8")
     print(f"quality eval: {sum(item['passed'] for item in results)}/{len(results)} passed")
-    return 0 if report["passed"] else 2
+    return 0 if report["passed"] or args.allow_failures else 2
 
 
 if __name__ == "__main__":

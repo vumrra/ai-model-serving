@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import json
 import os
 import platform
+import statistics
 import subprocess
 import sys
 import threading
@@ -32,6 +34,11 @@ class GpuSample:
     power_w: float
     memory_used_mib: float
     utilization_pct: float
+    temperature_c: float | None = None
+    graphics_clock_mhz: float | None = None
+    sm_clock_mhz: float | None = None
+    system_memory_used_mib: float | None = None
+    system_swap_used_mib: float | None = None
 
 
 class NvidiaSmiSampler:
@@ -46,7 +53,10 @@ class NvidiaSmiSampler:
     def start(self) -> None:
         command = [
             "nvidia-smi",
-            "--query-gpu=power.draw,memory.used,utilization.gpu",
+            (
+                "--query-gpu=power.draw,memory.used,utilization.gpu,"
+                "temperature.gpu,clocks.gr,clocks.sm"
+            ),
             "--format=csv,noheader,nounits",
             f"--loop-ms={self.interval_ms}",
         ]
@@ -80,28 +90,88 @@ class NvidiaSmiSampler:
             return
         for line in self._process.stdout:
             values = [value.strip() for value in line.split(",")]
-            if len(values) != 3:
+            if len(values) != 6:
                 continue
             try:
-                self.samples.append(GpuSample(*(float(value) for value in values)))
+                power_w, memory_used_mib, utilization_pct = (float(value) for value in values[:3])
             except ValueError:
                 continue
+            system_memory_used_mib, system_swap_used_mib = read_system_memory()
+            self.samples.append(
+                GpuSample(
+                    power_w=power_w,
+                    memory_used_mib=memory_used_mib,
+                    utilization_pct=utilization_pct,
+                    temperature_c=_optional_float(values[3]),
+                    graphics_clock_mhz=_optional_float(values[4]),
+                    sm_clock_mhz=_optional_float(values[5]),
+                    system_memory_used_mib=system_memory_used_mib,
+                    system_swap_used_mib=system_swap_used_mib,
+                )
+            )
 
     def summary(self) -> dict[str, float | int | None]:
-        if not self.samples:
-            return {
-                "gpu_samples": 0,
-                "gpu_power_w_mean": None,
-                "gpu_memory_used_mib_peak": None,
-                "gpu_utilization_pct_mean": None,
-            }
-        return {
-            "gpu_samples": len(self.samples),
-            "gpu_power_w_mean": sum(sample.power_w for sample in self.samples) / len(self.samples),
-            "gpu_memory_used_mib_peak": max(sample.memory_used_mib for sample in self.samples),
-            "gpu_utilization_pct_mean": sum(sample.utilization_pct for sample in self.samples)
-            / len(self.samples),
+        result: dict[str, float | int | None] = {"gpu_samples": len(self.samples)}
+        series = {
+            "gpu_power_w": [sample.power_w for sample in self.samples],
+            "gpu_memory_used_mib": [sample.memory_used_mib for sample in self.samples],
+            "gpu_utilization_pct": [sample.utilization_pct for sample in self.samples],
+            "gpu_temperature_c": [
+                sample.temperature_c for sample in self.samples if sample.temperature_c is not None
+            ],
+            "gpu_graphics_clock_mhz": [
+                sample.graphics_clock_mhz
+                for sample in self.samples
+                if sample.graphics_clock_mhz is not None
+            ],
+            "gpu_sm_clock_mhz": [
+                sample.sm_clock_mhz for sample in self.samples if sample.sm_clock_mhz is not None
+            ],
+            "system_memory_used_mib": [
+                sample.system_memory_used_mib
+                for sample in self.samples
+                if sample.system_memory_used_mib is not None
+            ],
+            "system_swap_used_mib": [
+                sample.system_swap_used_mib
+                for sample in self.samples
+                if sample.system_swap_used_mib is not None
+            ],
         }
+        for name, values in series.items():
+            result[f"{name}_mean"] = statistics.fmean(values) if values else None
+            result[f"{name}_p95"] = _p95(values)
+            result[f"{name}_peak"] = max(values) if values else None
+        return result
+
+
+def _p95(values: list[float]) -> float | None:
+    if not values:
+        return None
+    if len(values) == 1:
+        return values[0]
+    return statistics.quantiles(values, n=100, method="inclusive")[94]
+
+
+def _optional_float(value: str) -> float | None:
+    try:
+        return float(value)
+    except ValueError:
+        return None
+
+
+def read_system_memory(path: Path = Path("/proc/meminfo")) -> tuple[float | None, float | None]:
+    try:
+        fields: dict[str, int] = {}
+        for line in path.read_text(encoding="utf-8").splitlines():
+            key, separator, value = line.partition(":")
+            if separator:
+                fields[key] = int(value.split()[0])
+        memory_used_kib = fields["MemTotal"] - fields["MemAvailable"]
+        swap_used_kib = fields["SwapTotal"] - fields["SwapFree"]
+    except (FileNotFoundError, KeyError, OSError, ValueError):
+        return None, None
+    return memory_used_kib / 1024, swap_used_kib / 1024
 
 
 class TruncatedStreamError(RuntimeError):
@@ -114,6 +184,41 @@ class UpstreamStreamError(RuntimeError):
 
 def utc_now() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def _positive_int(value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("expected a positive integer") from exc
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("expected a positive integer")
+    return parsed
+
+
+def apply_execution_overrides(
+    workload: dict[str, Any], *, concurrency: int | None, rounds: int | None
+) -> None:
+    execution = workload.setdefault("execution", {})
+    if concurrency is not None:
+        execution["concurrency"] = concurrency
+    if rounds is not None:
+        execution["rounds"] = rounds
+
+
+def workload_metadata(workload: dict[str, Any]) -> dict[str, Any]:
+    canonical = json.dumps(
+        workload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
+    execution = workload.get("execution", {})
+    return {
+        "workload_sha256": hashlib.sha256(canonical).hexdigest(),
+        "execution_concurrency": max(1, int(execution.get("concurrency", 1))),
+        "execution_rounds": int(execution.get("rounds", 1)),
+    }
 
 
 def load_workload(path: Path, model_override: str | None = None) -> dict[str, Any]:
@@ -274,7 +379,9 @@ async def execute(
     )
     async with httpx.AsyncClient(timeout=timeout, limits=limits) as client:
         for case in cases[:warmup]:
-            await run_case(client, endpoint, case, headers)
+            result = await run_case(client, endpoint, case, headers)
+            if not result.success:
+                raise RuntimeError("warmup_failed")
 
         semaphore = asyncio.Semaphore(concurrency)
 
@@ -337,6 +444,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--engine", required=True)
     parser.add_argument("--model")
     parser.add_argument("--model-revision", required=True)
+    parser.add_argument("--concurrency", type=_positive_int)
+    parser.add_argument("--rounds", type=_positive_int)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--api-key-env", default="OPENAI_API_KEY")
     parser.add_argument("--label", action="append", default=[])
@@ -346,6 +455,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     workload = load_workload(args.workload, args.model)
+    apply_execution_overrides(workload, concurrency=args.concurrency, rounds=args.rounds)
     model = workload.get("defaults", {}).get("model")
     if not model:
         raise ValueError("model must be set in workload defaults or --model")
@@ -362,6 +472,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     environment = collect_environment(args.label)
     environment["benchmark_duration_seconds"] = duration_seconds
+    environment.update(workload_metadata(workload))
     environment.update(gpu_sampler.summary())
     run = BenchmarkRun(
         schema_version=1,
