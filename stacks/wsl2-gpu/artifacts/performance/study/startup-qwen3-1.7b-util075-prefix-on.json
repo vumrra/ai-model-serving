@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "pod": {
+    "name": "qwen-vllm-gpu-predictor-7895cbff55-mpt7t",
+    "namespace": "qwen-serving",
+    "phase": "Running",
+    "container_count": 1,
+    "restart_count": 0
+  },
+  "milestones": {
+    "created_at": "2026-08-28T02:24:45Z",
+    "scheduled_at": "2026-08-28T02:24:46Z",
+    "container_started_at": "2026-08-28T02:24:55Z",
+    "containers_ready_at": "2026-08-28T02:28:59Z",
+    "ready_at": "2026-08-28T02:28:59Z"
+  },
+  "durations_seconds": {
+    "scheduling": 1.0,
+    "container_start": 10.0,
+    "containers_ready": 254.0,
+    "ready": 254.0,
+    "container_to_ready": 244.0
+  },
+  "labels": {
+    "model": "qwen3-1.7b",
+    "cache": "warm",
+    "config": "util075-prefix-on"
+  }
+}

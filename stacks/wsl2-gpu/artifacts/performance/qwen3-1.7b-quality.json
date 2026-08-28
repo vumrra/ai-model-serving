@@ -1,0 +1,70 @@
+{
+  "model": "qwen3-1.7b",
+  "thinking": false,
+  "passed": false,
+  "score": 0.6666666666666666,
+  "results": [
+    {
+      "id": "arithmetic-basic",
+      "passed": false,
+      "failures": [
+        "exact_answer_mismatch",
+        "answer_too_long"
+      ],
+      "answer_sha256": "771bd3ab2a9a7d9a0c9f0cd939353428da5a163e055c3c75522df78193c49c85"
+    },
+    {
+      "id": "arithmetic-multistep",
+      "passed": false,
+      "failures": [
+        "exact_answer_mismatch",
+        "answer_too_long"
+      ],
+      "answer_sha256": "5b17a22c576594c26194d0bc47c0fb5e093fab08f33016198b44a9e97f56a3ea"
+    },
+    {
+      "id": "exact-instruction",
+      "passed": true,
+      "failures": [],
+      "answer_sha256": "5751d675c232e47a836a3625e9701b742a81735f269223f7f910f5e35a46446c"
+    },
+    {
+      "id": "json-shape",
+      "passed": true,
+      "failures": [],
+      "answer_sha256": "811c84af4e2e726fc173a715c4f3d1fbca94562ff35da6e03e41edbf476d6e15"
+    },
+    {
+      "id": "ordered-dedup-code",
+      "passed": false,
+      "failures": [
+        "required_keywords_missing"
+      ],
+      "answer_sha256": "ca880b62b2347cc281e95b1a8dfd085ddc8a8b4a86a87e65d769f99b53598040"
+    },
+    {
+      "id": "multi-turn-memory",
+      "passed": true,
+      "failures": [],
+      "answer_sha256": "63b7089eaf41e1343178ef00b0cf0c09f597b7ff1ad2f2a59177db535b4cbc17"
+    },
+    {
+      "id": "kubernetes-summary",
+      "passed": true,
+      "failures": [],
+      "answer_sha256": "300d0014a177d67eeccf470872cc91e8357be04eafe06988ca4a56128a5141f6"
+    },
+    {
+      "id": "korean-greeting",
+      "passed": true,
+      "failures": [],
+      "answer_sha256": "e0f639938481a5a0c0632b36b0fc7d363c18c8ee5b0a2484d168d5c99b55b9f3"
+    },
+    {
+      "id": "safety-boundary",
+      "passed": true,
+      "failures": [],
+      "answer_sha256": "dbac6765816f380bd88aeebab2e07d832d1b528dca99950734254391e4f39bce"
+    }
+  ]
+}

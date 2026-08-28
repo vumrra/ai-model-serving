@@ -111,11 +111,13 @@ def test_gateway_disables_thinking_for_upstream(settings: Settings):
 
 
 def test_stream_completion_ends_with_done(client: TestClient):
+    payload = _payload(stream=True)
+    payload["stream_options"] = {"include_usage": True}
     with client.stream(
         "POST",
         "/v1/chat/completions",
         headers=_headers(),
-        json=_payload(stream=True),
+        json=payload,
     ) as response:
         content = "".join(response.iter_text())
 

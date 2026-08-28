@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "pod": {
+    "name": "qwen-vllm-gpu-predictor-78f6f74dc5-p9k8x",
+    "namespace": "qwen-serving",
+    "phase": "Running",
+    "container_count": 1,
+    "restart_count": 0
+  },
+  "milestones": {
+    "created_at": "2026-08-28T03:32:49Z",
+    "scheduled_at": "2026-08-28T03:32:49Z",
+    "container_started_at": "2026-08-28T03:32:56Z",
+    "containers_ready_at": "2026-08-28T03:35:11Z",
+    "ready_at": "2026-08-28T03:35:11Z"
+  },
+  "durations_seconds": {
+    "scheduling": 0.0,
+    "container_start": 7.0,
+    "containers_ready": 142.0,
+    "ready": 142.0,
+    "container_to_ready": 135.0
+  },
+  "labels": {
+    "model": "qwen3-4b-awq",
+    "cache": "warm",
+    "config": "util075-prefix-on"
+  }
+}

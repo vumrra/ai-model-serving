@@ -1,0 +1,249 @@
+version: "3"
+
+vars:
+  ROOT:
+    sh: git -C "{{.TASKFILE_DIR}}" rev-parse --show-toplevel
+  PROFILE: qwen-wsl2-gpu
+  GATEWAY_TAG:
+    sh: git -C "{{.TASKFILE_DIR}}" rev-parse --short=12 HEAD
+  SERVING_CONFIG_SHA256:
+    sh: sha256sum "{{.TASKFILE_DIR}}/values.yaml" | cut --delimiter=' ' --fields=1
+  GIT_REVISION:
+    sh: printf '%s' "${GIT_REVISION:-main}"
+
+tasks:
+  verify:
+    desc: cluster 없이 WSL2 GPU overlay를 검증합니다.
+    cmds:
+      - helm lint "{{.ROOT}}/charts/qwen-serving" --values "{{.TASKFILE_DIR}}/values.yaml"
+      - helm template qwen-vllm-gpu "{{.ROOT}}/charts/qwen-serving" --values "{{.TASKFILE_DIR}}/values.yaml" > /dev/null
+      - uv run pytest "{{.TASKFILE_DIR}}/test_contract.py"
+
+  docker-gpu-smoke:
+    desc: Docker가 Windows GPU를 WSL2 컨테이너에 전달하는지 확인합니다.
+    cmds:
+      - docker run --rm --gpus all --entrypoint nvidia-smi docker.io/vllm/vllm-openai:v0.8.5@sha256:6cf9808ca8810fc6c3fd0451c2e7784fb224590d81f7db338e7eaf3c02a33d33
+
+  minikube-up:
+    desc: GTX 1660용 Minikube profile을 시작합니다.
+    cmds:
+      - minikube start --profile={{.PROFILE}} --kubernetes-version=v1.35.1 --driver=docker --container-runtime=docker --cpus=6 --memory=8192 --disk-size=60g --gpus=all
+
+  minikube-gpu-smoke:
+    desc: Minikube Pod에 GPU 1개를 할당하고 nvidia-smi 결과를 출력합니다.
+    cmds:
+      - kubectl patch daemonset nvidia-device-plugin-daemonset --namespace kube-system --type=strategic --patch-file "{{.TASKFILE_DIR}}/nvidia-device-plugin-patch.yaml"
+      - kubectl rollout status daemonset/nvidia-device-plugin-daemonset --namespace kube-system --timeout=5m
+      - test "$(kubectl get node {{.PROFILE}} -o jsonpath='{.status.allocatable.nvidia\.com/gpu}')" = "1"
+      - kubectl apply --filename "{{.TASKFILE_DIR}}/gpu-smoke.yaml"
+      - kubectl wait --for=jsonpath='{.status.phase}'=Succeeded pod/wsl2-gpu-smoke --timeout=10m
+      - kubectl logs pod/wsl2-gpu-smoke
+
+  minikube-gpu-smoke-clean:
+    desc: 확인 후 완료된 GPU smoke Pod를 삭제합니다.
+    cmds:
+      - kubectl delete --filename "{{.TASKFILE_DIR}}/gpu-smoke.yaml" --ignore-not-found
+
+  kserve-install:
+    desc: cert-manager와 KServe Standard Mode를 설치합니다.
+    cmds:
+      - helm upgrade --install cert-manager oci://quay.io/jetstack/charts/cert-manager --version v1.17.2 --namespace cert-manager --create-namespace --set crds.enabled=true --wait --timeout 10m
+      - helm upgrade --install kserve-crd oci://ghcr.io/kserve/charts/kserve-crd --version v0.19.0 --namespace kserve --create-namespace --wait
+      - helm upgrade --install kserve oci://ghcr.io/kserve/charts/kserve-resources --version v0.19.0 --namespace kserve --values "{{.ROOT}}/deploy/kubernetes/kserve-values.yaml" --wait --timeout 10m
+
+  kserve-deploy:
+    desc: WSL2 GPU InferenceService를 배포하고 준비 상태를 기다립니다.
+    cmds:
+      - helm upgrade --install qwen-vllm-gpu "{{.ROOT}}/charts/qwen-serving" --namespace qwen-serving --create-namespace --values "{{.TASKFILE_DIR}}/values.yaml"
+      - kubectl --namespace qwen-serving wait --for=create deployment/qwen-vllm-gpu-predictor --timeout=2m
+      - kubectl --namespace qwen-serving rollout status deployment/qwen-vllm-gpu-predictor --timeout=20m
+      - kubectl --namespace qwen-serving wait --for=condition=Ready inferenceservice/qwen-vllm-gpu --timeout=20m
+
+  kserve-forward:
+    desc: vLLM 원본 API를 localhost 8005에만 연결합니다.
+    cmds:
+      - kubectl --namespace qwen-serving port-forward --address 127.0.0.1 service/qwen-vllm-gpu-predictor 8005:80
+
+  kserve-status:
+    desc: WSL2 GPU serving 리소스 상태를 확인합니다.
+    cmds:
+      - kubectl --namespace qwen-serving get inferenceservice,servingruntime,deployment,pod,service,persistentvolumeclaim
+      - kubectl --namespace kserve get deployment,pod
+
+  gateway-image-build:
+    desc: Gateway linux/amd64 이미지를 빌드하고 Minikube에 적재합니다.
+    cmds:
+      - install --directory --mode 700 /tmp/qwen-serving-docker-public
+      - DOCKER_CONFIG=/tmp/qwen-serving-docker-public docker build --platform linux/amd64 --tag "qwen-gateway:{{.GATEWAY_TAG}}" --file "{{.ROOT}}/images/gateway.Dockerfile" "{{.ROOT}}"
+      - docker save "qwen-gateway:{{.GATEWAY_TAG}}" | docker exec --interactive "{{.PROFILE}}" docker load
+      - docker exec "{{.PROFILE}}" docker image inspect "qwen-gateway:{{.GATEWAY_TAG}}" > /dev/null
+
+  gateway-deploy:
+    desc: API key Secret과 Gateway를 배포합니다.
+    cmds:
+      - ': "${PUBLIC_API_KEY:?set PUBLIC_API_KEY}"'
+      - kubectl --namespace qwen-serving create secret generic qwen-gateway-api-key --from-literal=api-key="$PUBLIC_API_KEY" --dry-run=client --output=yaml | kubectl apply --filename=-
+      - helm upgrade --install qwen-gateway "{{.TASKFILE_DIR}}/gateway" --namespace qwen-serving --set-string image.tag="{{.GATEWAY_TAG}}" --set-string gitSha="{{.GATEWAY_TAG}}" --set-string gatewayImage="qwen-gateway:{{.GATEWAY_TAG}}" --set-string servingConfigSha256="{{.SERVING_CONFIG_SHA256}}"
+      - kubectl --namespace qwen-serving rollout status deployment/qwen-gateway --timeout=5m
+
+  gateway-forward:
+    desc: Gateway API를 localhost 8080에만 연결합니다.
+    cmds:
+      - kubectl --namespace qwen-serving port-forward --address 127.0.0.1 service/qwen-gateway 8080:80
+
+  gateway-status:
+    desc: Gateway 상태를 확인합니다.
+    cmds:
+      - kubectl --namespace qwen-serving get deployment/qwen-gateway service/qwen-gateway
+      - kubectl --namespace qwen-serving get pod --selector app=qwen-gateway
+
+  kubernetes-dashboard-forward:
+    desc: Kubernetes Dashboard를 localhost 8001에만 연결합니다.
+    cmds:
+      - kubectl proxy --address=127.0.0.1 --port=8001 --accept-hosts='^localhost$,^127\.0\.0\.1$'
+
+  argocd-install:
+    desc: Argo CD v3.5.1을 ClusterIP로 bootstrap합니다.
+    cmds:
+      - kubectl create namespace argocd --dry-run=client --output=yaml | kubectl apply --filename=-
+      - kubectl apply --server-side --force-conflicts --namespace argocd --filename https://raw.githubusercontent.com/argoproj/argo-cd/v3.5.1/manifests/install.yaml
+      - kubectl --namespace argocd wait --for=condition=Ready pod --all --timeout=10m
+
+  argocd-bootstrap:
+    desc: root Application 하나만 수동 적용합니다.
+    cmds:
+      - >-
+        sed --expression='s|targetRevision: main|targetRevision: {{.GIT_REVISION}}|'
+        --expression='s|value: main|value: {{.GIT_REVISION}}|'
+        "{{.TASKFILE_DIR}}/gitops/bootstrap/root-application.yaml" | kubectl apply --filename=-
+      - kubectl --namespace argocd wait --for=jsonpath='{.status.health.status}'=Healthy application/qwen-wsl2-gpu --timeout=10m
+
+  argocd-forward:
+    desc: Argo CD UI/API를 localhost 8081에만 연결합니다.
+    cmds:
+      - kubectl --namespace argocd port-forward --address 127.0.0.1 service/argocd-server 8081:443
+
+  argocd-status:
+    desc: GitOps Application 상태를 확인합니다.
+    cmds:
+      - kubectl --namespace argocd get applications
+
+  perf-benchmark:
+    desc: 최종 0.75/prefix-cache 설정의 성능과 GPU 전력을 다시 측정합니다.
+    cmds:
+      - >-
+        uv run python -m benchmarks.runner
+        --endpoint "${PERF_BASE_URL:-http://127.0.0.1:8005}/v1/chat/completions"
+        --workload "{{.TASKFILE_DIR}}/benchmarks/chat-single-raw.yaml"
+        --engine vllm-v0-xformers-graph-prefix-cache
+        --model qwen3-1.7b
+        --model-revision 70d244cc86ccca08cf5af4e1e306ecf908b1ad5e
+        --output "{{.TASKFILE_DIR}}/artifacts/performance/study/qwen3-1.7b-fp16-util075-short-c1-${PERF_RUN_ID:-latest}.json"
+        --label config_id=qwen3-1.7b-fp16-util075-seq1-graph-prefix-on
+        --label quantization=none
+        --label enforce_eager=false
+        --label gpu_memory_utilization=0.75
+        --label enable_prefix_caching=true
+        --label max_model_len=1024
+        --label max_num_seqs=1
+        --label thinking=false
+        --label slo_ttft_p95_ms=1000
+        --label slo_tpot_p95_ms=100
+        --label slo_gpu_peak_mib=5454
+        --label slo_gpu_free_min_mib=512
+        --label electricity_krw_per_kwh=200
+
+  perf-capacity-4b:
+    desc: 별도로 4B AWQ를 올린 endpoint에서만 future capacity gate를 재측정합니다.
+    requires:
+      vars: [PERF_BASE_URL]
+    cmds:
+      - >-
+        uv run python -m benchmarks.runner
+        --endpoint "${PERF_BASE_URL}/v1/chat/completions"
+        --workload "{{.TASKFILE_DIR}}/benchmarks/chat-single-raw.yaml"
+        --engine vllm-v0-xformers-graph-prefix-cache
+        --model qwen3-4b-awq
+        --model-revision 74d4bd2bd4bff9cafc9345221320bffb08b406a3
+        --output "{{.TASKFILE_DIR}}/artifacts/performance/study/qwen3-4b-awq-util075-short-c1-${PERF_RUN_ID:-latest}.json"
+        --label config_id=qwen3-4b-awq-util075-seq1-graph-prefix-on
+        --label quantization=awq
+        --label gpu_memory_utilization=0.75
+        --label enable_prefix_caching=true
+        --label max_model_len=1024
+        --label max_num_seqs=1
+        --label thinking=false
+        --label slo_ttft_p95_ms=1000
+        --label slo_tpot_p95_ms=200
+        --label slo_gpu_peak_mib=5710
+        --label slo_gpu_free_min_mib=256
+
+  perf-soak:
+    desc: 최종 설정을 72회 반복해 장시간 안정성을 검증합니다.
+    cmds:
+      - >-
+        uv run python -m benchmarks.runner
+        --endpoint "${PERF_BASE_URL:-http://127.0.0.1:8005}/v1/chat/completions"
+        --workload "{{.TASKFILE_DIR}}/benchmarks/chat-single-raw.yaml"
+        --engine vllm-v0-xformers-graph-prefix-cache
+        --model qwen3-1.7b
+        --model-revision 70d244cc86ccca08cf5af4e1e306ecf908b1ad5e
+        --concurrency 1
+        --rounds 72
+        --output "{{.TASKFILE_DIR}}/artifacts/performance/study/qwen3-1.7b-fp16-util075-final-soak-c1.json"
+        --label config_id=qwen3-1.7b-fp16-util075-seq1-graph-prefix-on
+        --label test_kind=final_soak
+        --label quantization=none
+        --label enforce_eager=false
+        --label gpu_memory_utilization=0.75
+        --label enable_prefix_caching=true
+        --label max_model_len=1024
+        --label max_num_seqs=1
+        --label thinking=false
+        --label slo_ttft_p95_ms=1000
+        --label slo_tpot_p95_ms=100
+        --label slo_gpu_peak_mib=5454
+        --label slo_gpu_free_min_mib=512
+        --label electricity_krw_per_kwh=200
+
+  perf-quality:
+    desc: 선택한 모델의 30개 품질 계약을 실행합니다. 다음 결과는 revision·config ID·suite SHA를 metadata로 함께 기록해야 비교 근거로 사용합니다.
+    cmds:
+      - >-
+        uv run python -m evals.runner
+        --base-url "${PERF_BASE_URL:-http://127.0.0.1:8005}"
+        --suite "{{.TASKFILE_DIR}}/evals/chat-quality.yaml"
+        --model qwen3-1.7b
+        --disable-thinking
+        --allow-failures
+        --max-tokens 128
+        --output "{{.TASKFILE_DIR}}/artifacts/performance/study/qwen3-1.7b-fp16-quality-30.json"
+
+  perf-startup:
+    desc: 현재 predictor Pod의 warm startup 이정표를 개인정보 없는 JSON으로 저장합니다.
+    cmds:
+      - >-
+        kubectl --namespace qwen-serving wait
+        --for=condition=Ready pod
+        --selector=serving.kserve.io/inferenceservice=qwen-vllm-gpu
+        --timeout=20m
+      - >-
+        kubectl --namespace qwen-serving get pod
+        "$(kubectl --namespace qwen-serving get pod
+        --selector=serving.kserve.io/inferenceservice=qwen-vllm-gpu
+        --field-selector=status.phase=Running
+        --output=jsonpath='{.items[0].metadata.name}')"
+        --output=json |
+        uv run python -m benchmarks.startup /dev/stdin
+        --output "{{.TASKFILE_DIR}}/artifacts/performance/study/startup-qwen3-1.7b-util075-prefix-on.json"
+        --label model=qwen3-1.7b
+        --label cache=warm
+        --label config=util075-prefix-on
+
+  perf-report:
+    desc: 저장된 실측 artifact에서 artifacts/performance/report.html을 생성합니다.
+    cmds:
+      - >-
+        uv run python "{{.TASKFILE_DIR}}/report.py"
+        --artifacts "{{.TASKFILE_DIR}}/artifacts/performance"
+        --output "{{.TASKFILE_DIR}}/artifacts/performance/report.html"

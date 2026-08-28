@@ -1,0 +1,252 @@
+{
+  "schema_version": 1,
+  "run_id": "e67c2ed9b9394202ac34f8681389db22",
+  "engine": "vllm-v0.8.5-kserve-raw",
+  "endpoint": "http://127.0.0.1:8005/v1/chat/completions",
+  "model": "qwen3-1.7b",
+  "model_revision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+  "workload": "wsl2-chat-single",
+  "started_at": "2026-08-27T14:49:12.859926+00:00",
+  "finished_at": "2026-08-27T14:51:33.551310+00:00",
+  "environment": {
+    "python": "3.14.4",
+    "platform": "Linux-6.18.33.2-microsoft-standard-WSL2-x86_64-with-glibc2.43",
+    "gpu": [
+      "NVIDIA GeForce GTX 1660, 560.94, 6144"
+    ],
+    "config_id": "baseline-fp16-util085-seq1",
+    "gpu_memory_utilization": "0.85",
+    "max_model_len": "1024",
+    "max_num_seqs": "1",
+    "slo_ttft_p95_ms": "1000",
+    "slo_tpot_p95_ms": "100",
+    "electricity_krw_per_kwh": "200",
+    "benchmark_duration_seconds": 120.17301413600217,
+    "gpu_samples": 239,
+    "gpu_power_w_mean": 48.93138075313808,
+    "gpu_memory_used_mib_peak": 5863.0,
+    "gpu_utilization_pct_mean": 98.0836820083682
+  },
+  "results": [
+    {
+      "request_id": "123a12d91ec744cab5f8fd0ab8a81600",
+      "prompt_id": "kubernetes-ko:r1",
+      "success": true,
+      "status_code": 200,
+      "ttft_ms": 466.5606039998238,
+      "e2e_ms": 6036.1387969969655,
+      "prompt_tokens": 37,
+      "completion_tokens": 64,
+      "error": null
+    },
+    {
+      "request_id": "a0505c11357941eaa420273ba0e8f5fc",
+      "prompt_id": "continuous-batching-ko:r1",
+      "success": true,
+      "status_code": 200,
+      "ttft_ms": 468.9317609954742,
+      "e2e_ms": 6033.263083998463,
+      "prompt_tokens": 35,
+      "completion_tokens": 64,
+      "error": null
+    },
+    {
+      "request_id": "a814895c2d7d4393968d90f79e6034ed",
+      "prompt_id": "python-code:r1",
+      "success": true,
+      "status_code": 200,
+      "ttft_ms": 292.36770399438683,
+      "e2e_ms": 5864.6329549956135,
+      "prompt_tokens": 32,
+      "completion_tokens": 64,
+      "error": null
+    },
+    {
+      "request_id": "ce883c217f6e46c7a6caa0e85fff6a4a",
+      "prompt_id": "arithmetic:r1",
+      "success": true,
+      "status_code": 200,
+      "ttft_ms": 299.9228359985864,
+      "e2e_ms": 5871.767684002407,
+      "prompt_tokens": 32,
+      "completion_tokens": 64,
+      "error": null
+    },
+    {
+      "request_id": "1f8cefe6f4894061901cfe0813306c09",
+      "prompt_id": "concise-advice:r1",
+      "success": true,
+      "status_code": 200,
+      "ttft_ms": 465.510775000439,
+      "e2e_ms": 6038.363234998542,
+      "prompt_tokens": 33,
+      "completion_tokens": 64,
+      "error": null
+    },
+    {
+      "request_id": "2073be09f35346c3849ef4073564bdb6",
+      "prompt_id": "kubernetes-ko:r2",
+      "success": true,
+      "status_code": 200,
+      "ttft_ms": 478.86474400002044,
+      "e2e_ms": 6058.321946999058,
+      "prompt_tokens": 37,
+      "completion_tokens": 64,
+      "error": null
+    },
+    {
+      "request_id": "abdbf68e565349f889c21ad19585b19c",
+      "prompt_id": "continuous-batching-ko:r2",
+      "success": true,
+      "status_code": 200,
+      "ttft_ms": 458.8322089985013,
+      "e2e_ms": 6025.255394997657,
+      "prompt_tokens": 35,
+      "completion_tokens": 64,
+      "error": null
+    },
+    {
+      "request_id": "b30ee7cbaa34415b9d67b2b6a4e8871b",
+      "prompt_id": "python-code:r2",
+      "success": true,
+      "status_code": 200,
+      "ttft_ms": 297.7659579992178,
+      "e2e_ms": 5922.829585004365,
+      "prompt_tokens": 32,
+      "completion_tokens": 64,
+      "error": null
+    },
+    {
+      "request_id": "a8ccf8bf8d0d46f386bcd3cec951edde",
+      "prompt_id": "arithmetic:r2",
+      "success": true,
+      "status_code": 200,
+      "ttft_ms": 295.7170430017868,
+      "e2e_ms": 5896.119212004123,
+      "prompt_tokens": 32,
+      "completion_tokens": 64,
+      "error": null
+    },
+    {
+      "request_id": "4e800fe3a96e4d2d9a545c15a9935f8d",
+      "prompt_id": "concise-advice:r2",
+      "success": true,
+      "status_code": 200,
+      "ttft_ms": 470.0012719986262,
+      "e2e_ms": 6102.854279000894,
+      "prompt_tokens": 33,
+      "completion_tokens": 64,
+      "error": null
+    },
+    {
+      "request_id": "e7992a32b8944b0d8e326d934cc4c849",
+      "prompt_id": "kubernetes-ko:r3",
+      "success": true,
+      "status_code": 200,
+      "ttft_ms": 474.8574449986336,
+      "e2e_ms": 6079.947211997933,
+      "prompt_tokens": 37,
+      "completion_tokens": 64,
+      "error": null
+    },
+    {
+      "request_id": "77eb0418bf014e93a52c2f7c021fd973",
+      "prompt_id": "continuous-batching-ko:r3",
+      "success": true,
+      "status_code": 200,
+      "ttft_ms": 462.9124840066652,
+      "e2e_ms": 6080.351844000688,
+      "prompt_tokens": 35,
+      "completion_tokens": 64,
+      "error": null
+    },
+    {
+      "request_id": "741caa404dc64ee48843945c381067dd",
+      "prompt_id": "python-code:r3",
+      "success": true,
+      "status_code": 200,
+      "ttft_ms": 292.4597930032178,
+      "e2e_ms": 5887.176193005871,
+      "prompt_tokens": 32,
+      "completion_tokens": 64,
+      "error": null
+    },
+    {
+      "request_id": "571a0bfe14e14529890cd3188977ffa2",
+      "prompt_id": "arithmetic:r3",
+      "success": true,
+      "status_code": 200,
+      "ttft_ms": 292.82510800112505,
+      "e2e_ms": 5916.706921998411,
+      "prompt_tokens": 32,
+      "completion_tokens": 64,
+      "error": null
+    },
+    {
+      "request_id": "a84a5e59f9b1469ba657c132fa2bc662",
+      "prompt_id": "concise-advice:r3",
+      "success": true,
+      "status_code": 200,
+      "ttft_ms": 472.08044900617097,
+      "e2e_ms": 6085.901787002513,
+      "prompt_tokens": 33,
+      "completion_tokens": 64,
+      "error": null
+    },
+    {
+      "request_id": "35a86024076d429c852f2844686cf09c",
+      "prompt_id": "kubernetes-ko:r4",
+      "success": true,
+      "status_code": 200,
+      "ttft_ms": 471.21194600185845,
+      "e2e_ms": 6121.369929001958,
+      "prompt_tokens": 37,
+      "completion_tokens": 64,
+      "error": null
+    },
+    {
+      "request_id": "5b6be7f9588c4270b8c9e0177e882235",
+      "prompt_id": "continuous-batching-ko:r4",
+      "success": true,
+      "status_code": 200,
+      "ttft_ms": 467.2414849992492,
+      "e2e_ms": 6106.211110003642,
+      "prompt_tokens": 35,
+      "completion_tokens": 64,
+      "error": null
+    },
+    {
+      "request_id": "af708421feed441fa6cbfd9428dca5da",
+      "prompt_id": "python-code:r4",
+      "success": true,
+      "status_code": 200,
+      "ttft_ms": 295.6641069977195,
+      "e2e_ms": 5959.143143998517,
+      "prompt_tokens": 32,
+      "completion_tokens": 64,
+      "error": null
+    },
+    {
+      "request_id": "8a54f75af26f49799845fdbe0e62f8e0",
+      "prompt_id": "arithmetic:r4",
+      "success": true,
+      "status_code": 200,
+      "ttft_ms": 294.6440689993324,
+      "e2e_ms": 5937.858343997505,
+      "prompt_tokens": 32,
+      "completion_tokens": 64,
+      "error": null
+    },
+    {
+      "request_id": "23a87294ffc14a27a8a76c99103e2b14",
+      "prompt_id": "concise-advice:r4",
+      "success": true,
+      "status_code": 200,
+      "ttft_ms": 474.4876309996471,
+      "e2e_ms": 6148.084246000508,
+      "prompt_tokens": 33,
+      "completion_tokens": 64,
+      "error": null
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+schema_version: 1
+name: wsl2-chat-single-thinking-off
+defaults:
+  model: qwen-demo
+  stream: true
+  stream_options:
+    include_usage: true
+  chat_template_kwargs:
+    enable_thinking: false
+  temperature: 0.0
+  top_p: 1.0
+  seed: 42
+  max_tokens: 64
+execution:
+  warmup_requests: 3
+  rounds: 4
+  concurrency: 1
+  timeout_seconds: 120
+prompts:
+  - id: kubernetes-ko
+    messages:
+      - role: user
+        content: 쿠버네티스가 컨테이너를 관리하는 방식을 세 문장으로 설명해 주세요.
+  - id: continuous-batching-ko
+    messages:
+      - role: user
+        content: LLM 서빙의 연속 배칭을 장점과 한계를 포함해 세 문장으로 설명해 주세요.
+  - id: python-code
+    messages:
+      - role: user
+        content: 정수 리스트의 중복을 제거하면서 순서를 보존하는 Python 함수를 작성해 주세요.
+  - id: arithmetic
+    messages:
+      - role: user
+        content: 17에 25를 더한 결과와 계산식을 한 문장으로 답해 주세요.
+  - id: concise-advice
+    messages:
+      - role: user
+        content: 운영 API의 지연 시간을 줄이는 실용적인 방법 세 가지를 짧게 알려 주세요.

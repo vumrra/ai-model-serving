@@ -24,13 +24,16 @@ def test_local_mlx_chart_uses_standard_kserve_without_gpu() -> None:
     documents = render("values-local-mlx-cpu.yaml")
     runtime = next(item for item in documents if item["kind"] == "ServingRuntime")
     service = next(item for item in documents if item["kind"] == "InferenceService")
+    annotations = service["metadata"]["annotations"]
 
     container = runtime["spec"]["containers"][0]  # type: ignore[index]
     assert container["image"] == "qwen-mlx-cpu:local"
     assert container["resources"]["requests"] == {"cpu": "2", "memory": "4Gi"}
     assert "nvidia.com/gpu" not in container["resources"]["limits"]
     assert container["readinessProbe"]["httpGet"]["port"] == 8000
-    assert service["metadata"]["annotations"]["serving.kserve.io/deploymentMode"] == "Standard"
+    assert annotations["serving.kserve.io/deploymentMode"] == "Standard"
+    assert annotations["serving.kserve.io/autoscalerClass"] == "none"
+    assert "serving.kserve.io/autoscaler-class" not in annotations
     assert service["spec"]["predictor"]["deploymentStrategy"]["type"] == "Recreate"
     assert service["spec"]["predictor"]["model"]["runtime"] == "qwen-mlx-cpu"
     assert service["spec"]["predictor"]["model"]["modelFormat"]["name"] == "huggingface"
@@ -94,9 +97,14 @@ def test_local_kserve_disables_ingress_and_waits_for_service_readiness() -> None
 
     taskfile = yaml.safe_load((ROOT / "Taskfile.yml").read_text(encoding="utf-8"))
     commands = taskfile["tasks"]["kserve-deploy"]["cmds"]
-    assert "wait --for=condition=Ready inferenceservice/qwen-vllm-cpu" in commands[1]
-    assert "--timeout=60m" in commands[1]
-    assert "rollout status deployment/qwen-vllm-cpu-predictor" in commands[2]
+    assert any(
+        "wait --for=condition=Ready inferenceservice/qwen-vllm-cpu" in command
+        and "--timeout=60m" in command
+        for command in commands
+    )
+    assert any(
+        "rollout status deployment/qwen-vllm-cpu-predictor" in command for command in commands
+    )
 
 
 def test_open_webui_uses_gateway_and_persistent_volume() -> None:

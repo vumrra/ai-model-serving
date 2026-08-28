@@ -1,0 +1,95 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: qwen-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: qwen-gateway
+  template:
+    metadata:
+      labels:
+        app: qwen-gateway
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: gateway
+          {{- if .Values.image.digest }}
+          image: {{ printf "%s@%s" .Values.image.repository .Values.image.digest | quote }}
+          {{- else }}
+          image: {{ printf "%s:%s" .Values.image.repository (required "image.tag is required" .Values.image.tag) | quote }}
+          {{- end }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: PUBLIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.apiKeySecretName }}
+                  key: api-key
+            - name: ENGINE_API_KEY
+              value: ""
+            - name: ENGINE_BASE_URL
+              value: {{ .Values.upstreamBaseUrl | quote }}
+            - name: MODEL_ALIAS
+              value: {{ .Values.publicModelName | quote }}
+            - name: ENGINE_MODEL_NAME
+              value: {{ .Values.upstreamModelName | quote }}
+            - name: ENABLE_THINKING
+              value: "false"
+            - name: CHAT_UI_ENABLED
+              value: "false"
+            - name: ENGINE_NAME
+              value: kserve-vllm-gpu
+            - name: RELEASE_ID
+              value: {{ .Values.releaseId | quote }}
+            - name: GIT_SHA
+              value: {{ .Values.gitSha | quote }}
+            - name: GATEWAY_IMAGE
+              value: {{ .Values.gatewayImage | quote }}
+            - name: RUNTIME_IMAGE
+              value: {{ .Values.runtimeImage | quote }}
+            - name: SERVING_CONFIG_SHA256
+              value: {{ .Values.servingConfigSha256 | quote }}
+            - name: MODEL_REVISION
+              value: 70d244cc86ccca08cf5af4e1e306ecf908b1ad5e
+            - name: RATE_LIMIT_REQUESTS
+              value: {{ .Values.rateLimitRequests | quote }}
+            - name: RATE_LIMIT_WINDOW_SECONDS
+              value: {{ .Values.rateLimitWindowSeconds | quote }}
+          startupProbe:
+            httpGet:
+              path: /livez
+              port: http
+            failureThreshold: 12
+            periodSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: http
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

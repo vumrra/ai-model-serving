@@ -251,6 +251,7 @@ self-hosted GitHub Actions runner에는 신뢰하지 않는 pull request를 실�
 
 GTX 1660 한 장에서는 이전 모델과 새 모델을 동시에 GPU에 올리기 어렵습니다. 기본 배포 전략은
 `Recreate`이며 모델을 교체하는 동안 짧은 중단을 허용합니다.
+`serving.kserve.io/autoscalerClass: none` annotation으로 HPA 생성을 막고 replica 1을 유지합니다.
 
 ```text
 GitOps values 변경

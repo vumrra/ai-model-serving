@@ -1,5 +1,9 @@
 kserve:
   controller:
     deploymentMode: Standard
+    resources:
+      limits:
+        cpu: 500m
     gateway:
+      disableIstioVirtualHost: true
       disableIngressCreation: true
