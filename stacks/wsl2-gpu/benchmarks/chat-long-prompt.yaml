@@ -1,0 +1,34 @@
+schema_version: 1
+name: wsl2-chat-long-prompt-thinking-off
+defaults:
+  model: qwen-demo
+  stream: true
+  stream_options:
+    include_usage: true
+  chat_template_kwargs:
+    enable_thinking: false
+  temperature: 0.0
+  top_p: 1.0
+  seed: 42
+  max_tokens: 64
+execution:
+  warmup_requests: 2
+  rounds: 20
+  concurrency: 1
+  timeout_seconds: 180
+prompts:
+  - id: operations-summary-ko
+    messages:
+      - role: system
+        content: |
+          당신은 사내 GPU 추론 플랫폼의 운영 기록을 요약한다. 환경은 Windows 11 호스트, WSL2 Ubuntu, Docker Desktop, Minikube Docker driver, Kubernetes, KServe Standard Mode, vLLM과 NVIDIA GTX 1660 6GB로 구성된다. Linux용 NVIDIA 드라이버를 WSL 안에 따로 설치하지 않고 Windows 드라이버의 GPU-PV 경로를 사용한다.
+
+          모델은 Qwen3-1.7B이며 float16, 최대 문맥 1024, 최대 동시 시퀀스 1, thinking 비활성, CPU offload와 swap 비활성이다. 모델 revision과 컨테이너 image digest를 고정한다. GPU Pod는 nvidia.com/gpu 1을 요청하고 단일 GPU 충돌을 막기 위해 replica 1과 Recreate 전략을 사용한다.
+
+          외부 요청은 Windows 사설 LAN의 8000 포트에서 들어와 WSL의 자동 재연결 port-forward를 거쳐 FastAPI Gateway에 도달한다. Gateway는 API key 인증, 속도 제한, 요청 검증, qwen-demo 별칭 변환, thinking 비활성 강제, JSON 및 SSE 전달을 담당한다. KServe predictor와 vLLM 원본 API, Kubernetes API, Argo CD는 인터넷에 공개하지 않는다.
+
+          배포는 GitHub Actions가 Gateway를 검사하고 linux/amd64 이미지를 만든 뒤 GHCR에 digest로 올리는 것으로 시작한다. 자동화가 GitOps values의 digest를 갱신하면 WSL2의 Argo CD가 Git을 pull하여 Helm 리소스를 동기화한다. GitHub Actions는 집의 Kubernetes API에 직접 접속하지 않는다. 롤백은 cluster 수동 변경이 아니라 Git revert로 수행한다.
+
+          운영 합격 조건은 요청 성공률 100%, TTFT p95 1초 이하, TPOT p95 100ms 이하, VRAM 여유 512MiB 이상이다. 전력 비용은 GPU 전력만 측정한 값이며 PC 전체 비용으로 표현하지 않는다. 시간당 토큰은 짧은 실행의 환산값이면 실제 한 시간 지속 부하와 구분한다.
+      - role: user
+        content: 위 기록에서 외부 공개 지점, 배포 주체, 롤백 방식, 성능 합격 조건을 각각 한 문장으로 요약해 주세요.
